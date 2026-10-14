@@ -4,7 +4,7 @@
 
 Anki is excellent at helping you remember what you've learned. But as your flashcard collection grows, it also becomes something else: a substantial body of knowledge that you might want to explore, organize, connect, and build upon.
 
-Flashcard Bank brings that collection into Obsidian, leveraging its metadata, linking, querying, and visualization capabilities to turn your flashcards into a connected, explorable knowledge base, while keeping them synchronized with Anki for spaced repetition.
+Flashcard Bank brings that collection into Obsidian, leveraging its metadata, linking, and visualization capabilities to turn your flashcards into a connected, explorable knowledge base, while sending the cards you choose to Anki for spaced repetition.
 
 ![The bank: concepts on the left, cards in the middle, the editor on the right](images/bank.png)
 
