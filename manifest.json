@@ -1,11 +1,9 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "flashcard-bank",
+	"name": "Flashcard Bank",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"minAppVersion": "1.7.2",
+	"description": "Browse, organize and edit flashcards written as list items in your notes, grouped by the concepts they link to, with a concept map and one-way Anki sync.",
+	"author": "Juan Carlos Esguerra",
 	"isDesktopOnly": false
 }
