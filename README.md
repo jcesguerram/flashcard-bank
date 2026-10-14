@@ -267,6 +267,10 @@ I built Flashcard Bank with Claude Code, working through a careful, iterative pr
 
 The ideas and vision behind the plugin are my own. Claude Code was instrumental in turning them into working software, but the project has been guided throughout by my own experience, needs, and decisions.
 
+### Support
+
+If you find this plugin useful or the ideas behind it interesting, [consider buying me a coffee](https://ko-fi.com/jcesguerram). I'd really appreciate it!
+
 ## License
 
 [MIT](LICENSE) © 2026 Juan Carlos Esguerra
