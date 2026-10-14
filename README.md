@@ -261,6 +261,12 @@ Run `npm test` with a few of your own notes after changing the parser: every car
 
 To release, run `npm version patch` (or `minor` / `major`), then `git push --follow-tags`. The release workflow builds the plugin and creates a draft GitHub release with `main.js`, `manifest.json` and `styles.css` attached; publish it from the repository's Releases page.
 
+## About the development
+
+I built Flashcard Bank with Claude Code, working through a careful, iterative process of discussion, implementation, testing, and refinement.
+
+The ideas and vision behind the plugin are my own. Claude Code was instrumental in turning them into working software, but the project has been guided throughout by my own experience, needs, and decisions.
+
 ## License
 
 [MIT](LICENSE) © 2026 Juan Carlos Esguerra
