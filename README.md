@@ -1,14 +1,58 @@
 # Flashcard Bank
 
-An Obsidian plugin for flashcards written as list items in your notes. It gathers them into a bank where you can:
+**Combine Obsidian's knowledge management capabilities with Anki's spaced repetition system.**
 
-- browse them by the concepts they link to
-- search and filter them
-- edit them in a form instead of in the raw line
-- see how they hang together, card by card, on a concept map
-- sync the ones you choose to Anki
+Anki is excellent at helping you remember what you've learned. But as your flashcard collection grows, it also becomes something else: a substantial body of knowledge that you might want to explore, organize, connect, and build upon.
 
-Your notes stay the only source of truth. The plugin keeps no copy of the cards: it reads them from the notes every time and writes edits straight back into each card's own line.
+Flashcard Bank brings that collection into Obsidian, leveraging its metadata, linking, querying, and visualization capabilities to turn your flashcards into a connected, explorable knowledge base, while keeping them synchronized with Anki for spaced repetition.
+
+![The bank: concepts on the left, cards in the middle, the editor on the right](images/bank.png)
+
+## The idea behind Flashcard Bank
+
+### A flashcard collection is a knowledge base
+
+A serious learning practice can produce thousands of flashcards. Together, they represent a substantial investment in understanding and organizing a subject. Yet most flashcard tools are designed primarily around reviewing individual questions and answers, rather than exploring the knowledge contained in the collection as a whole.
+
+Flashcard Bank is built around the idea that your flashcards should be useful beyond spaced repetition. You should be able to search them, organize them, discover connections, and use them as a resource for further learning and thinking.
+
+### Thousands of cards, without thousands of notes
+
+Flashcard Bank takes a different approach to representing cards in Obsidian.
+
+Instead of requiring a separate note for every flashcard, it recognizes cards written as Markdown list items, identified by a tag and a simple question–answer format. Each card can also carry inline metadata, such as its source, related cards, or Anki deck.
+
+This means you can keep multiple cards together in the notes where they belong, while still treating each one as an individual, searchable and filterable item.
+
+Your cards remain part of your notes, without turning your vault into an overwhelming collection of tiny files.
+
+### A web of knowledge emerges from your cards
+
+Flashcards don't have to exist as isolated questions and answers.
+
+By including ordinary Obsidian `[[wikilinks]]` in a card's question or answer, you connect it to the concepts it addresses. Cards that refer to the same concepts become connected automatically, even when they live in different notes.
+
+As your collection grows, these connections form an increasingly rich network of knowledge that you can explore through the plugin's concept map. You can move from a concept to the cards that address it, discover relationships between different areas of knowledge, and follow direct links between individual cards.
+
+The network emerges naturally from the way you write your cards. There's no need to maintain a separate graph or manually catalog every relationship.
+
+![The concept map: the open card, its concepts, and the other cards that address them](images/concept-map.png)
+
+### Your notes remain the source of truth
+
+Cards are ordinary Markdown content stored in your Obsidian notes. Flashcard Bank doesn't maintain a separate database of them: it reads the cards from your notes and writes edits directly back to their original locations.
+
+This allows you to work with your flashcards as part of your broader personal knowledge base, using Obsidian's linking and organizational capabilities.
+
+### Obsidian for knowledge, Anki for memory
+
+Flashcard Bank doesn't replace Anki. It complements it.
+
+Obsidian provides the environment for creating, connecting, organizing, and exploring your knowledge. Anki provides the spaced repetition system that helps you retain it.
+
+You decide which cards to synchronize, and Obsidian remains the source of truth for their content.
+
+Anki helps you remember your knowledge. Obsidian helps you work with it.
 
 ## Installation
 
@@ -22,7 +66,7 @@ It requires Obsidian 1.7.2 or later.
 
 The plugin makes no network requests except for the optional Anki sync. When you sync, it talks to the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on running inside Anki on your own computer (by default `http://127.0.0.1:8765`). Nothing is sent anywhere else, and there's no telemetry.
 
-## Opening it
+## Getting started
 
 - The **layers** icon in the ribbon (*Open flashcard bank*), or
 - Command palette → **Flashcard Bank: Open bank**
@@ -135,6 +179,8 @@ Each card shows its state in the bank:
 ### Syncing
 
 Click **Anki** in the toolbar, or run **Flashcard Bank: Sync with Anki**. The plugin reads Anki and shows a summary before changing anything:
+
+![The sync summary shown before anything changes in Anki](images/anki-sync.png)
 
 - **Will be created**: new cards. Cards with a deck but no block id get one written into their note first, since the pairing needs it.
 - **Will be updated**: content changed, deck changed (the note is moved to the new deck), or the card moved to another note. A card that keeps its block id and content when moved stays paired with the same Anki note and keeps its history.

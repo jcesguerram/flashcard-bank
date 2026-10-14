@@ -344,7 +344,7 @@ export class CardStore {
   syncCardOf(c: Card): SyncCard | null {
     const deck = this.deckOf(c);
     if (!deck || !c.id) return null;
-    return { key: cardKey(c), id: c.id, q: c.q, deck, front: toAnkiText(c.q), back: toAnkiText(c.a) };
+    return { key: cardKey(c), id: c.id, q: plainValue(c.q), deck, front: toAnkiText(c.q), back: toAnkiText(c.a) };
   }
 
   ankiStatus(c: Card): AnkiStatus {

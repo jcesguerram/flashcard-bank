@@ -179,7 +179,7 @@ textarea.bt-input { resize: vertical; font-family: inherit; }
   color: var(--text-accent);
   background: rgba(var(--interactive-accent-rgb, 124, 58, 237), 0.1);
   border-radius: var(--radius-s);
-  padding: 0 3px;
+  padding: 0 1px;
   cursor: pointer;
   font-weight: inherit;
 }

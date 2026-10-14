@@ -3,7 +3,7 @@
 import { App, Modal, Notice } from "obsidian";
 import { Plan, planIsEmpty, planSync, readAnki, runSync, SyncCard } from "./sync";
 import { cardKey } from "./store";
-import type { Card } from "./card";
+import { plainValue, type Card } from "./card";
 import type FlashcardBankPlugin from "./main";
 
 function gather(plugin: FlashcardBankPlugin) {
@@ -12,7 +12,7 @@ function gather(plugin: FlashcardBankPlugin) {
   const withDeck = all.filter((c) => store.deckOf(c));
   const noId = withDeck.filter((c) => !c.id);
   const cards = withDeck.map((c) => store.syncCardOf(c)).filter((x): x is SyncCard => !!x);
-  const known = new Map<string, string>(all.filter((c) => c.id).map((c) => [cardKey(c), c.q] as [string, string]));
+  const known = new Map<string, string>(all.filter((c) => c.id).map((c) => [cardKey(c), plainValue(c.q)] as [string, string]));
   return { cards, known, noId };
 }
 
@@ -100,7 +100,7 @@ class SyncModal extends Modal {
     el.addClass("bt-sync-modal");
     el.createEl("h3", { text: "Sync with Anki" });
     const p = this.plan;
-    const create = p.create.map((c) => c.q).concat(this.noId.map((c) => c.q + " (will get an id)"));
+    const create = p.create.map((c) => c.q).concat(this.noId.map((c) => plainValue(c.q) + " (will get an id)"));
     this.section(el, "Will be created in Anki", create);
     this.section(el, "Will be updated", p.update.map((u) => u.card.q + " — " + [u.fields ? "content" : "", u.deck ? "deck → " + u.card.deck : "", u.fromKey && !u.fields && !u.deck ? "moved to another note" : ""].filter(Boolean).join(", ")));
     this.section(el, "Will be re-created (their Anki note no longer exists)", p.recreate.map((c) => c.q));
