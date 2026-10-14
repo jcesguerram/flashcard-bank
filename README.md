@@ -24,7 +24,7 @@ Instead of requiring a separate note for every flashcard, it recognizes cards wr
 
 This means you can keep multiple cards together in the notes where they belong, while still treating each one as an individual, searchable and filterable item.
 
-And although your cards can live anywhere in your vault, you can manage them all from one central interface. Flashcard Bank automatically gathers cards from across your notes into a unified view, where you can browse, search, filter, create, and edit them without having to navigate to their original locations.
+And although your cards can live anywhere in your vault, you can manage them all from one central interface. Flashcard Bank automatically gathers cards from across your notes into a unified view, where you can browse, search, filter, create, and edit them without having to open the notes they live in. New cards are added to whichever note you choose.
 
 Your cards remain part of your notes, without turning your vault into an overwhelming collection of tiny files or sacrificing the convenience of a centralized card manager.
 
