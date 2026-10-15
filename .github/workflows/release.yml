@@ -43,8 +43,12 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   tag="${GITHUB_REF#refs/tags/}"
+                  files="main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}"
 
-                  gh release create "$tag" \
-                    --title="$tag" \
-                    --draft \
-                    main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                  # A release published from GitHub's website creates the tag first;
+                  # attach the built files to it instead of creating a second release.
+                  if gh release view "$tag" >/dev/null 2>&1; then
+                    gh release upload "$tag" $files --clobber
+                  else
+                    gh release create "$tag" --title="$tag" --draft $files
+                  fi

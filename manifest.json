@@ -1,9 +1,10 @@
 {
 	"id": "flashcard-bank",
 	"name": "Flashcard Bank",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.7.2",
 	"description": "Browse, organize and edit flashcards written as list items in your notes, grouped by the concepts they link to, with a concept map and one-way Anki sync.",
 	"author": "Juan Carlos Esguerra",
-	"isDesktopOnly": false
+	"isDesktopOnly": false,
+	"fundingUrl": "https://ko-fi.com/jcesguerram"
 }

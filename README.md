@@ -259,7 +259,7 @@ npm test -- path/to/note.md   # also checks that every card in that note round-t
 
 Run `npm test` with a few of your own notes after changing the parser: every card in them must come back identical when rewritten without changes.
 
-To release, run `npm version patch` (or `minor` / `major`), then `git push --follow-tags`. The release workflow builds the plugin and creates a draft GitHub release with `main.js`, `manifest.json` and `styles.css` attached; publish it from the repository's Releases page.
+To release, bump the version (`npm version patch`, or `minor` / `major`) and push, then publish a release whose tag is the new version, either with `git push --follow-tags` or from the repository's Releases page. The release workflow builds the plugin and attaches `main.js`, `manifest.json` and `styles.css` to that release (or creates a draft release with them, if none exists yet). Include the version in the release name.
 
 ## About the development
 

@@ -4,9 +4,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 0 !important;
   overflow: hidden;
 }
+/* The bank draws its own spacing: drop the default padding of the tab's content area. */
+.workspace-leaf-content .view-content.bt-root { padding: 0; }
 
 .bt-bar {
   display: flex;
@@ -186,7 +187,7 @@ textarea.bt-input { resize: vertical; font-family: inherit; }
 .bt-concept-link:hover { background: rgba(var(--interactive-accent-rgb, 124, 58, 237), 0.2); }
 .bt-concept-link.is-active { box-shadow: inset 0 0 0 1px var(--interactive-accent); }
 .bt-concept-link.is-ghost { color: var(--text-muted); background: transparent; border: 1px dashed var(--background-modifier-border); }
-.bt-card-link { text-decoration: underline dotted; text-underline-offset: 2px; cursor: pointer; }
+.bt-card-link { border-bottom: 1px dotted currentColor; cursor: pointer; }
 
 .bt-chip-text { overflow: hidden; text-overflow: ellipsis; }
 .bt-chip.is-clickable { cursor: pointer; }

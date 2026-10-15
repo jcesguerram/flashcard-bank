@@ -1,6 +1,6 @@
 {
 	"name": "flashcard-bank",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Browse, organize and edit flashcards written as list items in your Obsidian notes.",
 	"main": "main.js",
 	"type": "module",

@@ -2,6 +2,12 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.0.1 — 2026-10-14
+
+- Links to other cards are underlined in a way that works on every supported Obsidian version.
+- The bank's tab spacing is set without `!important`, so themes and snippets can override it.
+- A donation link (Ko-fi) appears on the plugin's page in Obsidian.
+
 ## 1.0.0 — 2026-10-14
 
 First public release.
