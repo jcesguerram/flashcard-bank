@@ -1,14 +1,28 @@
-// The "Flashcard Bank" tab: concepts list, card list, editor and concept map.
+// The "Flashcard Bank" tab: concepts column, card list, editor, concept map and concept pages.
 
 import { ItemView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from "obsidian";
 import { Card, rewriteCard, newCardLine, plainValue, safeAlias, newId, parseLinks } from "./card";
-import { CardStore, Concept, Draft, SaveError, cardKey, pathOfKey } from "./store";
+import { AnkiStatus, CardStore, Concept, Draft, SaveError, SectionState, cardKey, pathOfKey } from "./store";
 import { InlineSuggest } from "./suggest";
 import { drawConceptMap } from "./map";
 import type FlashcardBankPlugin from "./main";
 
 export const VIEW_TYPE = "flashcard-bank";
 const NO_CONCEPT = "\u0000no-concept";
+const NARROW = 760; // below this width the bank shows one panel at a time
+const TINY = 520; // below this the concepts column becomes a strip above the list
+
+const ANKI_LABEL: Record<Exclude<AnkiStatus, "none">, string> = {
+  pending: "Anki: new",
+  synced: "Synced with Anki",
+  changed: "Anki: changed",
+  leaving: "Anki: will be deleted",
+};
+
+interface ConceptEntry {
+  concept: Concept;
+  cards: Card[];
+}
 
 export class BankView extends ItemView {
   private store: CardStore;
@@ -19,6 +33,12 @@ export class BankView extends ItemView {
   private concept = ""; // concept key, NO_CONCEPT, or "" for all
   private source = "";
   private note = "";
+  private filtersOpen = false;
+
+  // concept page
+  private pageKey: string | null = null;
+  private pageTab: "overview" | "connections" = "overview";
+  private pageOpen = new Set<string>(); // cards whose answer is shown on the page (by place and card)
 
   // editor state
   private selKey: string | null = null; // card being edited, or "new"
@@ -30,16 +50,25 @@ export class BankView extends ItemView {
   private plannedIds = new Map<string, string>();
   private saving = false;
 
+  // list state
+  private hitKeys: string[] = [];
+  private listScroll = 0;
+
   // elements
+  private crumbsEl!: HTMLElement;
   private conceptsEl!: HTMLElement;
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private mapEl!: HTMLElement;
   private editorEl!: HTMLElement;
+  private pageEl!: HTMLElement;
+  private filterPanel!: HTMLElement;
+  private filterBtn!: HTMLElement;
   private sourceSel!: HTMLSelectElement;
   private noteSel!: HTMLSelectElement;
   private bodyEl!: HTMLElement;
   private mapBtn!: HTMLElement;
+  private segBtns: HTMLElement[] = [];
 
   constructor(leaf: WorkspaceLeaf, private plugin: FlashcardBankPlugin) {
     super(leaf);
@@ -52,6 +81,7 @@ export class BankView extends ItemView {
 
   private get cfg() { return this.plugin.settings; }
   private get fieldNames() { return this.store.f; }
+  private get narrow() { return this.bodyEl.hasClass("bt-narrow"); }
 
   async onOpen() {
     try {
@@ -75,43 +105,79 @@ export class BankView extends ItemView {
     root.empty();
     root.addClass("bt-root");
 
-    const bar = root.createDiv({ cls: "bt-bar" });
-    const search = bar.createEl("input", { type: "search", placeholder: "Search questions, answers and fields", cls: "bt-search" });
-    search.addEventListener("input", () => { this.query = search.value; this.renderList(); });
-    // Each filter dropdown gets a small caption above it.
-    const filter = (label: string): HTMLSelectElement => {
-      const wrap = bar.createEl("label", { cls: "bt-filter-wrap" });
-      wrap.createSpan({ cls: "bt-filter-label", text: label });
-      return wrap.createEl("select", { cls: "dropdown bt-filter" });
-    };
-    this.sourceSel = filter("Filter by source");
-    this.sourceSel.addEventListener("change", () => { this.source = this.sourceSel.value; this.renderList(); });
-    this.noteSel = filter("Filter by note");
-    this.noteSel.addEventListener("change", () => { this.note = this.noteSel.value; this.renderList(); });
-    this.mapBtn = bar.createEl("button", { cls: "bt-map-btn" });
-    setIcon(this.mapBtn.createSpan(), "network");
-    this.mapBtn.createSpan({ text: "Map" });
+    // Header: where you are, plus the map and Anki tools.
+    const head = root.createDiv({ cls: "bt-head" });
+    this.crumbsEl = head.createDiv({ cls: "bt-crumbs" });
+    const tools = head.createDiv({ cls: "bt-head-tools" });
+    this.mapBtn = tools.createEl("button", { cls: "clickable-icon bt-map-btn", attr: { "aria-label": "Concept map" } });
+    setIcon(this.mapBtn, "network");
     this.mapBtn.addEventListener("click", () => this.toggleMap());
-    const ab = bar.createEl("button", { cls: "bt-anki-btn", attr: { "aria-label": "Sync with Anki" } });
-    setIcon(ab.createSpan(), "refresh-cw");
-    ab.createSpan({ text: "Anki" });
+    const ab = tools.createEl("button", { cls: "clickable-icon bt-anki-btn", attr: { "aria-label": "Sync with Anki" } });
+    setIcon(ab, "refresh-cw");
     ab.addEventListener("click", () => { void this.plugin.syncAnki(); });
-    const nb = bar.createEl("button", { cls: "mod-cta bt-new" });
+
+    // Search, filters, new card.
+    const bar = root.createDiv({ cls: "bt-bar" });
+    const sw = bar.createDiv({ cls: "bt-search-wrap" });
+    setIcon(sw.createSpan({ cls: "bt-search-icon" }), "search");
+    const search = sw.createEl("input", { type: "search", placeholder: "Search your cards…", cls: "bt-search" });
+    search.addEventListener("input", () => {
+      this.query = search.value;
+      if (this.pageKey) this.closePage();
+      else this.renderList();
+    });
+    this.filterBtn = bar.createEl("button", { cls: "bt-filter-btn" });
+    this.filterBtn.addEventListener("click", () => {
+      this.filtersOpen = !this.filtersOpen;
+      this.renderFilterButton();
+    });
+    const nb = bar.createEl("button", { cls: "bt-new" });
     setIcon(nb.createSpan(), "plus");
     nb.createSpan({ text: "New card" });
     nb.addEventListener("click", () => this.startNew());
+
+    this.filterPanel = root.createDiv({ cls: "bt-filter-panel" });
+    const filter = (label: string): HTMLSelectElement => {
+      const wrap = this.filterPanel.createEl("label", { cls: "bt-filter-wrap" });
+      wrap.createSpan({ cls: "bt-filter-label", text: label });
+      return wrap.createEl("select", { cls: "dropdown bt-filter" });
+    };
+    this.sourceSel = filter("Source");
+    this.sourceSel.addEventListener("change", () => this.setFilter("source", this.sourceSel.value));
+    this.noteSel = filter("Note");
+    this.noteSel.addEventListener("change", () => this.setFilter("note", this.noteSel.value));
+    const clr = this.filterPanel.createEl("button", { cls: "bt-filter-clear", text: "Clear filters" });
+    clr.addEventListener("click", () => {
+      this.source = "";
+      this.note = "";
+      this.renderFilters();
+      this.renderList();
+    });
 
     this.bodyEl = root.createDiv({ cls: "bt-body" });
     const treeCol = this.bodyEl.createDiv({ cls: "bt-tree-col" });
     treeCol.createDiv({ cls: "bt-col-title", text: "Concepts" });
     this.conceptsEl = treeCol.createDiv({ cls: "bt-tree" });
     const listCol = this.bodyEl.createDiv({ cls: "bt-list-col" });
-    this.countEl = listCol.createDiv({ cls: "bt-count" });
+    const listHead = listCol.createDiv({ cls: "bt-list-head" });
+    this.countEl = listHead.createDiv({ cls: "bt-count" });
+    const seg = listHead.createDiv({ cls: "bt-seg" });
+    for (const [mode, label] of [["compact", "Compact"], ["expanded", "Expanded"]] as const) {
+      const b = seg.createEl("button", { text: label, attr: { "data-density": mode } });
+      b.addEventListener("click", () => this.setDensity(mode));
+      this.segBtns.push(b);
+    }
     this.listEl = listCol.createDiv({ cls: "bt-list" });
     this.mapEl = listCol.createDiv({ cls: "bt-map" });
     this.editorEl = this.bodyEl.createDiv({ cls: "bt-editor" });
+    this.pageEl = this.bodyEl.createDiv({ cls: "bt-page" });
 
-    const ro = new ResizeObserver(() => this.bodyEl.toggleClass("bt-narrow", this.bodyEl.clientWidth < 760));
+    const ro = new ResizeObserver(() => {
+      const w = this.bodyEl.clientWidth;
+      if (!w) return;
+      this.bodyEl.toggleClass("bt-narrow", w < NARROW);
+      this.bodyEl.toggleClass("bt-tiny", w < TINY);
+    });
     ro.observe(this.bodyEl);
     this.register(() => ro.disconnect());
 
@@ -134,12 +200,24 @@ export class BankView extends ItemView {
     this.mapBtn.toggleClass("is-active", this.cfg.showMap);
     this.bodyEl.toggleClass("has-map", this.cfg.showMap);
     this.bodyEl.toggleClass("map-expanded", this.cfg.showMap && this.cfg.mapExpanded);
+    this.listEl.toggleClass("is-expanded", this.cfg.density === "expanded");
+    for (const b of this.segBtns) b.toggleClass("is-active", b.getAttr("data-density") === this.cfg.density);
+  }
+
+  private setDensity(mode: "compact" | "expanded"): void {
+    if (this.cfg.density === mode) return;
+    this.cfg.density = mode;
+    void this.plugin.saveSettings();
+    this.syncToolbar();
+    this.renderList();
   }
 
   private toggleMap(): void {
-    this.cfg.showMap = !this.cfg.showMap;
+    // On a concept page the map button brings back the bank with the map showing.
+    this.cfg.showMap = this.pageKey ? true : !this.cfg.showMap;
     if (!this.cfg.showMap) this.cfg.mapExpanded = false; // hiding the map brings the list back
     void this.plugin.saveSettings();
+    if (this.pageKey && this.cfg.showMap) this.closePage();
     this.syncToolbar();
     this.renderMap();
   }
@@ -148,12 +226,14 @@ export class BankView extends ItemView {
   startNew(): void {
     if (!this.confirmDiscard("new")) return;
     const path = this.original?.path || this.cfg.lastNote || this.firstNote();
+    this.rememberScroll();
     this.selKey = "new";
     this.original = null;
     this.newNote = path;
     this.plannedIds = new Map([["new", newId(new Set(this.idsIn(path)))]]);
     this.draft = { q: "", a: "", source: "", deck: "", conns: [] };
     this.dirty = false;
+    if (this.pageKey) this.closePage(false);
     this.renderList();
     this.renderEditor();
     this.editorEl.querySelector<HTMLElement>(".bt-q")?.focus();
@@ -190,9 +270,38 @@ export class BankView extends ItemView {
     this.renderList();
     if (withEditor) this.renderEditor();
     else this.renderEditorLive();
+    this.renderPage();
   }
 
-  // ── Filters ──────────────────────────────────────────────────────────────
+  // ── Header and filters ───────────────────────────────────────────────────
+
+  private conceptName(key: string): string {
+    if (key === NO_CONCEPT) return "No concepts";
+    return this.store.allConcepts().find((e) => e.concept.key === key)?.concept.name || "";
+  }
+
+  private renderCrumbs(): void {
+    const el = this.crumbsEl;
+    el.empty();
+    setIcon(el.createSpan({ cls: "bt-crumbs-icon" }), "layers");
+    const home = el.createSpan({ cls: "bt-crumbs-home", text: "Flashcard bank" });
+    const here = this.pageKey ? this.conceptName(this.pageKey) : this.concept ? this.conceptName(this.concept) : "All cards";
+    if (this.pageKey) {
+      home.addClass("is-link");
+      home.addEventListener("click", () => this.closePage());
+    }
+    el.createSpan({ cls: "bt-crumbs-sep", text: "/" });
+    el.createSpan({ cls: "bt-crumbs-here", text: here });
+  }
+
+  private renderFilterButton(): void {
+    const n = (this.source ? 1 : 0) + (this.note ? 1 : 0);
+    this.filterBtn.empty();
+    setIcon(this.filterBtn.createSpan(), "sliders-horizontal");
+    this.filterBtn.createSpan({ text: n ? "Filter · " + n : "Filter" });
+    this.filterBtn.toggleClass("is-active", n > 0 || this.filtersOpen);
+    this.filterPanel.toggleClass("is-open", this.filtersOpen);
+  }
 
   private renderFilters(): void {
     const cards = this.store.all();
@@ -203,6 +312,14 @@ export class BankView extends ItemView {
     const notes = Array.from(this.store.byPath.keys()).sort();
     if (this.note && !notes.includes(this.note)) this.note = "";
     fillSelect(this.noteSel, "Any note", notes, this.note, noteName);
+    this.renderFilterButton();
+  }
+
+  private setFilter(which: "source" | "note", value: string): void {
+    this[which] = value;
+    if (this.pageKey) this.closePage(false);
+    this.renderFilterButton();
+    this.renderList();
   }
 
   private fieldOf(c: Card, name: string): string {
@@ -229,36 +346,62 @@ export class BankView extends ItemView {
     return cards.sort((a, b) => (a.path === b.path ? a.line - b.line : a.path.localeCompare(b.path)));
   }
 
-  // ── Concepts list ────────────────────────────────────────────────────────
+  // ── Concepts column ──────────────────────────────────────────────────────
+
+  /**
+   * The key a concept has now. A concept without a note ("?name") gets the note's
+   * path as its key once the note is created: follow it so the page or filter stays.
+   */
+  private currentKey(key: string): string | null {
+    const list = this.store.allConcepts();
+    if (list.some((e) => e.concept.key === key)) return key;
+    if (!key.startsWith("?")) return null;
+    const name = key.slice(1);
+    return list.find((e) => e.concept.name.toLowerCase() === name)?.concept.key ?? null;
+  }
 
   private renderConcepts(): void {
     const cards = this.store.all();
     const list = this.store.allConcepts().sort((x, y) => y.cards.length - x.cards.length || x.concept.name.localeCompare(y.concept.name));
-    if (this.concept && this.concept !== NO_CONCEPT && !list.some((e) => e.concept.key === this.concept)) this.concept = "";
+    if (this.concept && this.concept !== NO_CONCEPT) this.concept = this.currentKey(this.concept) ?? "";
+    if (this.pageKey) this.pageKey = this.currentKey(this.pageKey) ?? this.pageKey;
     const none = cards.filter((c) => !this.store.conceptsOf(c).length).length;
+    const active = this.pageKey ?? this.concept;
     this.conceptsEl.empty();
-    this.conceptRow("", "All", cards.length, "");
+    this.conceptRow("", "All cards", cards.length, "", active === "", () => this.showAll());
     for (const e of list) {
-      const row = this.conceptRow(e.concept.key, e.concept.name, e.cards.length, e.concept.exists ? "" : " is-ghost");
-      row.setAttr("title", e.concept.name + (e.concept.exists ? "" : " · no note yet"));
+      const k = e.concept;
+      const row = this.conceptRow(k.key, k.name, e.cards.length, k.exists ? "" : " is-ghost", active === k.key, () => this.openPage(k.key));
+      row.setAttr("title", k.name + (k.exists ? "" : " · no note yet"));
     }
-    if (none) this.conceptRow(NO_CONCEPT, "No concepts", none, " is-muted");
+    if (none) this.conceptRow(NO_CONCEPT, "No concepts", none, " is-muted", active === NO_CONCEPT, () => this.setConcept(NO_CONCEPT));
     if (!list.length && cards.length) {
       this.conceptsEl.createDiv({ cls: "bt-muted bt-concepts-hint", text: "Write [[links]] in a card's question or answer: each linked note becomes a concept." });
     }
+    this.renderCrumbs();
   }
 
-  private conceptRow(key: string, label: string, n: number, cls: string): HTMLElement {
-    const row = this.conceptsEl.createDiv({ cls: "bt-tree-row" + (this.concept === key ? " is-active" : "") + cls });
+  private conceptRow(key: string, label: string, n: number, cls: string, active: boolean, onClick: () => void): HTMLElement {
+    const row = this.conceptsEl.createDiv({ cls: "bt-tree-row" + (active ? " is-active" : "") + cls, attr: { "data-key": key } });
     row.createSpan({ cls: "bt-tree-label", text: label });
     row.createSpan({ cls: "bt-tree-count", text: String(n) });
-    row.addEventListener("click", () => this.setConcept(key));
+    row.addEventListener("click", onClick);
     return row;
+  }
+
+  private showAll(): void {
+    this.concept = "";
+    if (this.pageKey) this.closePage();
+    else {
+      this.renderConcepts();
+      this.renderList();
+    }
   }
 
   /** Filter the bank by a concept (clicking the active one again clears it). */
   private setConcept(key: string): void {
     this.concept = this.concept === key && key !== "" ? "" : key;
+    if (this.pageKey) this.closePage(false);
     this.renderConcepts();
     this.renderList();
   }
@@ -268,13 +411,16 @@ export class BankView extends ItemView {
   private renderList(): void {
     const all = this.store.all();
     const hits = this.sorted(all.filter((c) => this.matches(c)));
+    this.hitKeys = hits.map(cardKey);
     this.countEl.empty();
     this.countEl.createSpan({ text: hits.length + (hits.length === 1 ? " card" : " cards") });
     if (this.concept === NO_CONCEPT) this.countEl.createSpan({ text: " without concepts" });
     else if (this.concept) {
-      const k = this.store.allConcepts().find((e) => e.concept.key === this.concept)?.concept;
       this.countEl.createSpan({ text: " mentioning " });
-      this.countEl.createSpan({ cls: "bt-concept-link", text: k ? k.name : "" });
+      const name = this.countEl.createSpan({ cls: "bt-count-concept", text: this.conceptName(this.concept) });
+      name.setAttr("title", "Open the concept page");
+      const key = this.concept;
+      name.addEventListener("click", () => this.openPage(key));
     }
     if (this.concept) {
       const clr = this.countEl.createEl("a", { cls: "bt-clear", text: "Clear" });
@@ -286,35 +432,34 @@ export class BankView extends ItemView {
     } else {
       for (const c of hits) this.cardRow(this.listEl, c);
     }
+    this.renderCrumbs();
     this.renderMap();
   }
 
   private cardRow(parent: HTMLElement, c: Card): void {
     const key = cardKey(c);
     const row = parent.createDiv({ cls: "bt-card" + (key === this.selKey ? " is-active" : "") });
-    const main = row.createDiv({ cls: "bt-card-main" });
-    this.richText(main.createDiv({ cls: "bt-card-q" }), c.q || "(no question)", c.path);
-    if (c.a) this.richText(main.createDiv({ cls: "bt-card-a" }), c.a, c.path);
-    const pills = main.createDiv({ cls: "bt-pills" });
-    const src = plainValue(this.fieldOf(c, this.fieldNames.source));
-    if (src) pill(pills, "book-open", src);
-    const deck = plainValue(this.fieldOf(c, this.fieldNames.deck));
-    if (deck) pill(pills, "layers", deck);
-    const nr = this.store.linksOf(c).length;
-    if (nr) pill(pills, "arrow-left-right", String(nr)).setAttr("title", nr + " in " + this.fieldNames.related);
-    pill(pills, "file", noteName(c.path), "bt-pill-note");
-    if (!c.id) pill(pills, "", "no id", "bt-pill-warn");
-    const st = this.store.ankiStatus(c);
-    if (st !== "none") {
-      const label = { pending: "Anki: new", synced: "Anki ✓", changed: "Anki: changed", leaving: "Anki: will be deleted" }[st];
-      pill(pills, "", label, "bt-pill-anki is-" + st);
+    row.createDiv({ cls: "bt-card-q", text: readable(c.q) || "(no question)" });
+    if (c.a) row.createDiv({ cls: "bt-card-a", text: readable(c.a) });
+    if (this.cfg.density === "expanded") {
+      const meta: string[] = [];
+      const src = plainValue(this.fieldOf(c, this.fieldNames.source));
+      if (src) meta.push(src);
+      meta.push(this.store.deckOf(c) || "no deck");
+      meta.push(noteName(c.path));
+      const nr = this.store.linksOf(c).length;
+      if (nr) meta.push(nr + " related");
+      const m = row.createDiv({ cls: "bt-card-meta", text: meta.join(" · ") });
+      if (!c.id) m.createSpan({ cls: "bt-warn", text: " · no id" });
     }
+    const st = this.store.ankiStatus(c);
+    if (st !== "none") row.createDiv({ cls: "bt-card-status is-" + st, text: ANKI_LABEL[st] });
     row.addEventListener("click", () => this.selectCard(c));
   }
 
   /**
-   * Card text with its links made usable: links to notes (concepts) filter
-   * the bank, links to other cards open that card. Shown as they read, without brackets.
+   * Card text with its links made usable: links to notes (concepts) open the
+   * concept's page, links to other cards open that card. Shown as they read, without brackets.
    */
   private richText(el: HTMLElement, text: string, path: string): void {
     const re = /(!?)\[\[([^\]|]+?)(?:\|([^\]]*))?\]\]/g;
@@ -336,13 +481,13 @@ export class BankView extends ItemView {
         const card = target ? this.store.get(target) : undefined;
         if (card) {
           span.setAttr("title", "Open card: " + plainValue(card.q));
-          span.addEventListener("click", (e) => { e.stopPropagation(); this.selectCard(card); });
+          span.addEventListener("click", (e) => { e.stopPropagation(); this.editFromPage(card); });
         }
       } else {
         const k = this.store.conceptOf(l, path);
-        const span = el.createSpan({ cls: "bt-concept-link" + (k.exists ? "" : " is-ghost") + (this.concept === k.key ? " is-active" : ""), text: shown });
-        span.setAttr("title", "Show cards mentioning " + k.name + (k.exists ? "" : " (no note yet)"));
-        span.addEventListener("click", (e) => { e.stopPropagation(); this.setConcept(k.key); });
+        const span = el.createSpan({ cls: "bt-concept-link" + (k.exists ? "" : " is-ghost"), text: shown });
+        span.setAttr("title", "Open the page of " + k.name);
+        span.addEventListener("click", (e) => { e.stopPropagation(); this.openPage(k.key); });
       }
     }
     if (pos < text.length) el.appendChild(document.createTextNode(text.slice(pos)));
@@ -352,7 +497,13 @@ export class BankView extends ItemView {
     const key = cardKey(c);
     if (key === this.selKey) return;
     if (!this.confirmDiscard(key)) return;
+    this.rememberScroll();
     this.openCard(c);
+  }
+
+  /** On narrow screens the list hides while the editor is open: remember where it was. */
+  private rememberScroll(): void {
+    if (this.narrow && !this.draft) this.listScroll = this.listEl.scrollTop;
   }
 
   /** Returns false (and arms a second click) when there are unsaved changes. */
@@ -384,9 +535,7 @@ export class BankView extends ItemView {
     this.mapEl.empty();
     if (!this.cfg.showMap) return;
     const focus = this.selKey === "new" ? null : this.original;
-    drawConceptMap(this.mapEl, this.store, focus, (c) => this.selectCard(c), (k) => {
-      if (this.concept !== k.key) this.setConcept(k.key);
-    }, (tools) => {
+    drawConceptMap(this.mapEl, this.store, focus, (c) => this.selectCard(c), (k) => this.openPage(k.key), (tools) => {
       const exp = this.cfg.mapExpanded;
       const b = tools.createEl("button", { cls: "bt-map-expand", attr: { "aria-label": exp ? "Show the list again" : "Expand the map" } });
       setIcon(b.createSpan(), exp ? "minimize-2" : "maximize-2");
@@ -403,6 +552,183 @@ export class BankView extends ItemView {
     this.renderMap();
   }
 
+  // ── Concept page ─────────────────────────────────────────────────────────
+
+  /** Open a concept's page in place of the list and editor (the editor keeps its state). */
+  openPage(key: string): void {
+    if (!this.store.allConcepts().some((e) => e.concept.key === key)) return;
+    if (this.pageKey !== key) {
+      this.pageKey = key;
+      this.pageTab = "overview";
+      this.pageOpen = new Set();
+    }
+    this.renderConcepts();
+    this.renderPage();
+    this.pageEl.scrollTop = 0;
+  }
+
+  private closePage(render = true): void {
+    this.pageKey = null;
+    this.bodyEl.removeClass("has-page");
+    this.pageEl.empty();
+    if (render) {
+      this.renderConcepts();
+      this.renderList();
+    }
+  }
+
+  /** Leave the page and open a card in the editor, with the list showing the page's concept. */
+  private editFromPage(c: Card): void {
+    if (this.pageKey) {
+      this.concept = this.pageKey;
+      this.closePage();
+    }
+    this.selectCard(c);
+  }
+
+  private conceptCards(key: string): Card[] {
+    const e = this.store.allConcepts().find((x) => x.concept.key === key);
+    return e ? this.sorted(e.cards.map((k) => this.store.get(k)).filter((x): x is Card => !!x)) : [];
+  }
+
+  /** The other concepts that share cards with this one, most shared first. */
+  private nearby(key: string, cards: Card[]): ConceptEntry[] {
+    const near = new Map<string, ConceptEntry>();
+    for (const c of cards) {
+      for (const o of this.store.conceptsOf(c)) {
+        if (o.key === key) continue;
+        const e = near.get(o.key) || { concept: o, cards: [] };
+        if (!e.cards.includes(c)) e.cards.push(c);
+        near.set(o.key, e);
+      }
+    }
+    return Array.from(near.values()).sort((a, b) => b.cards.length - a.cards.length || a.concept.name.localeCompare(b.concept.name));
+  }
+
+  private renderPage(): void {
+    const el = this.pageEl;
+    if (!el) return;
+    const keep = el.scrollTop;
+    el.empty();
+    if (this.pageKey) this.pageKey = this.currentKey(this.pageKey) ?? this.pageKey;
+    const entry = this.pageKey ? this.store.allConcepts().find((e) => e.concept.key === this.pageKey) : undefined;
+    if (this.pageKey && !entry) {
+      // The concept is gone (its last card changed): back to the bank.
+      this.closePage();
+      return;
+    }
+    this.bodyEl.toggleClass("has-page", !!entry);
+    if (!entry) return;
+    const k = entry.concept;
+    const cards = this.conceptCards(k.key);
+    const near = this.nearby(k.key, cards);
+    const sources = new Map<string, number>();
+    for (const c of cards) for (const s of new Set(this.store.sourcesOf(c))) sources.set(s, (sources.get(s) || 0) + 1);
+
+    const head = el.createDiv({ cls: "bt-page-head" });
+    const titles = head.createDiv();
+    titles.createDiv({ cls: "bt-page-kicker", text: "Concept overview" });
+    const h = titles.createDiv({ cls: "bt-page-title", text: k.name });
+    if (!k.exists) h.createSpan({ cls: "bt-page-ghost", text: "no note yet" });
+    titles.createDiv({
+      cls: "bt-page-stats",
+      text: [plural(cards.length, "card"), plural(sources.size, "source"), plural(near.length, "connected concept")].join(" · "),
+    });
+    const acts = head.createDiv({ cls: "bt-page-actions" });
+    const show = acts.createEl("button");
+    setIcon(show.createSpan(), "filter");
+    show.createSpan({ text: "Show in bank" });
+    show.addEventListener("click", () => {
+      this.concept = k.key;
+      this.closePage();
+    });
+    const note = acts.createEl("button");
+    setIcon(note.createSpan(), k.exists ? "file-text" : "file-plus");
+    note.createSpan({ text: k.exists ? "Open note" : "Create note" });
+    note.addEventListener("click", () => { void this.openConceptNote(k, cards[0]?.path || ""); });
+
+    const tabs = el.createDiv({ cls: "bt-tabs" });
+    for (const [id, label] of [["overview", "Overview"], ["connections", "Connections"]] as const) {
+      const t = tabs.createEl("button", { cls: "bt-tab" + (this.pageTab === id ? " is-active" : ""), text: label });
+      t.addEventListener("click", () => {
+        this.pageTab = id;
+        this.renderPage();
+      });
+    }
+
+    if (this.pageTab === "overview") {
+      const grid = el.createDiv({ cls: "bt-page-grid" });
+      const main = grid.createDiv({ cls: "bt-page-main" });
+      main.createDiv({ cls: "bt-page-h", text: "What you've captured" });
+      for (const c of cards) this.pageCard(main, c, "", "overview");
+      const side = grid.createDiv({ cls: "bt-page-side" });
+      side.createDiv({ cls: "bt-page-h", text: "Explore nearby" });
+      if (!near.length) side.createDiv({ cls: "bt-muted", text: "No card links this concept to another one yet." });
+      for (const n of near) {
+        const tile = side.createDiv({ cls: "bt-near" + (n.concept.exists ? "" : " is-ghost") });
+        tile.createDiv({ cls: "bt-near-name", text: n.concept.name });
+        tile.createDiv({ cls: "bt-near-count", text: plural(n.cards.length, "shared card") + " →" });
+        tile.addEventListener("click", () => this.openPage(n.concept.key));
+      }
+      side.createDiv({ cls: "bt-page-h bt-page-h-gap", text: "Sources in these cards" });
+      if (!sources.size) side.createDiv({ cls: "bt-muted", text: "These cards don't name a source." });
+      for (const [s, n] of Array.from(sources.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+        const row = side.createDiv({ cls: "bt-page-source" });
+        row.createSpan({ text: s });
+        row.createSpan({ cls: "bt-tree-count", text: " " + n });
+        row.setAttr("title", "Show these cards from " + s);
+        row.addEventListener("click", () => {
+          this.concept = k.key;
+          this.source = s;
+          this.closePage(false);
+          this.renderFilters();
+          this.renderConcepts();
+          this.renderList();
+        });
+      }
+    } else {
+      const box = el.createDiv({ cls: "bt-conns" });
+      box.createDiv({ cls: "bt-muted bt-conns-hint", text: "Cards that link " + k.name + " to another concept. Open a card to read its answer, or click a concept to go to its page." });
+      if (!near.length) box.createDiv({ cls: "bt-empty", text: "No card links " + k.name + " to another concept yet." });
+      for (const n of near) {
+        const g = box.createDiv({ cls: "bt-conn-group" });
+        const gh = g.createDiv({ cls: "bt-conn-head" });
+        gh.createSpan({ text: k.name });
+        setIcon(gh.createSpan({ cls: "bt-conn-arrow" }), "arrow-left-right");
+        const other = gh.createSpan({ cls: "bt-concept-link" + (n.concept.exists ? "" : " is-ghost"), text: n.concept.name });
+        other.addEventListener("click", () => this.openPage(n.concept.key));
+        gh.createSpan({ cls: "bt-tree-count", text: plural(n.cards.length, "card") });
+        for (const c of n.cards) this.pageCard(g, c, "↳", n.concept.key);
+      }
+    }
+    el.scrollTop = keep;
+  }
+
+  /** A card on the concept page: the question, with the answer and its details shown on click. */
+  private pageCard(parent: HTMLElement, c: Card, mark: string, where: string): void {
+    const key = where + "\n" + cardKey(c); // the same card can show in several places, each opens on its own
+    const item = parent.createDiv({ cls: "bt-pc" + (this.pageOpen.has(key) ? " is-open" : "") });
+    const head = item.createDiv({ cls: "bt-pc-head" });
+    if (mark) head.createSpan({ cls: "bt-pc-mark", text: mark });
+    head.createSpan({ cls: "bt-pc-q", text: readable(c.q) || "(no question)" });
+    const tog = head.createSpan({ cls: "bt-pc-toggle" });
+    const body = item.createDiv({ cls: "bt-pc-body" });
+    this.richText(body.createDiv({ cls: "bt-pc-a" }), c.a || "(no answer)", c.path);
+    const meta = body.createDiv({ cls: "bt-pc-meta" });
+    const src = plainValue(this.fieldOf(c, this.fieldNames.source));
+    meta.createSpan({ text: (src ? src + " · " : "") + noteName(c.path) + " · " });
+    const edit = meta.createSpan({ cls: "bt-pc-edit", text: "Edit card" });
+    edit.addEventListener("click", (e) => { e.stopPropagation(); this.editFromPage(c); });
+    const draw = () => setIcon(tog, item.hasClass("is-open") ? "minus" : "plus");
+    draw();
+    head.addEventListener("click", () => {
+      item.toggleClass("is-open", !item.hasClass("is-open"));
+      if (item.hasClass("is-open")) this.pageOpen.add(key);
+      else this.pageOpen.delete(key);
+      draw();
+    });
+  }
+
   // ── Editor ───────────────────────────────────────────────────────────────
 
   /** Re-draws the parts of the open editor that depend on other cards (set by renderEditor). */
@@ -410,6 +736,22 @@ export class BankView extends ItemView {
 
   private renderEditorLive(): void {
     this.editorLive?.();
+  }
+
+  /** A collapsible editor section whose open/closed state is remembered. */
+  private section(parent: HTMLElement, id: keyof SectionState, title: string): { body: HTMLElement; setSummary: (s: string) => void } {
+    const sec = parent.createDiv({ cls: "bt-sec" + (this.cfg.open[id] ? " is-open" : ""), attr: { "data-section": id } });
+    const head = sec.createDiv({ cls: "bt-sec-head" });
+    setIcon(head.createSpan({ cls: "bt-sec-chev" }), "chevron-right");
+    head.createSpan({ cls: "bt-sec-title", text: title });
+    const sum = head.createSpan({ cls: "bt-sec-sum" });
+    const body = sec.createDiv({ cls: "bt-sec-body" });
+    head.addEventListener("click", () => {
+      this.cfg.open[id] = !this.cfg.open[id];
+      sec.toggleClass("is-open", this.cfg.open[id]);
+      void this.plugin.saveSettings();
+    });
+    return { body, setSummary: (s) => sum.setText(s) };
   }
 
   private renderEditor(): void {
@@ -424,61 +766,118 @@ export class BankView extends ItemView {
     const F = this.fieldNames;
     const pathNow = () => (isNew ? this.newNote : c ? c.path : "");
 
+    // Back to the list (narrow screens only).
+    const nav = el.createDiv({ cls: "bt-ed-nav" });
+    const back = nav.createEl("button", { cls: "bt-ed-back" });
+    setIcon(back.createSpan(), "chevron-left");
+    back.createSpan({ text: "Cards" });
+    back.addEventListener("click", () => {
+      if (!this.confirmDiscard("close")) return;
+      this.closeEditor();
+    });
+    const pos = this.selKey ? this.hitKeys.indexOf(this.selKey) : -1;
+    if (pos >= 0) nav.createSpan({ cls: "bt-muted", text: pos + 1 + " of " + this.hitKeys.length });
+
     const head = el.createDiv({ cls: "bt-ed-head" });
     head.createDiv({ cls: "bt-ed-title", text: isNew ? "New card" : "Edit card" });
-    const close = head.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Close" } });
+    if (c && !isNew) head.createDiv({ cls: "bt-ed-note", text: noteName(c.path) });
+    const close = head.createEl("button", { cls: "clickable-icon bt-ed-close", attr: { "aria-label": "Close" } });
     setIcon(close, "x");
     close.addEventListener("click", () => {
       if (!this.confirmDiscard("close")) return;
       this.closeEditor();
     });
 
-    const meta = el.createDiv({ cls: "bt-ed-meta" });
     if (isNew) {
-      meta.createSpan({ text: "Appended to the end of " });
+      const meta = el.createDiv({ cls: "bt-ed-meta" });
+      meta.createSpan({ text: "Added at the end of " });
       const wrap = meta.createDiv({ cls: "bt-note-pick" });
       const inp = wrap.createEl("input", { type: "text", value: this.newNote, placeholder: "Target note" });
       new InlineSuggest(inp, (q) => this.noteItems(q), (it) => { inp.value = it.value; this.setNewNote(it.value); }, true);
       inp.addEventListener("change", () => this.setNewNote(inp.value));
-    } else if (c) {
-      meta.createSpan({ text: noteName(c.path) });
-      if (c.id) meta.createSpan({ cls: "bt-mono", text: " · ^" + c.id });
-      else meta.createSpan({ cls: "bt-pill bt-pill-warn", text: "no id · gets ^" + this.plannedIds.get(this.selKey!) + " on save" });
     }
 
+    // 1. Question and answer
     const qIn = area(el, "Question", d.q, 2, "What does [[Tier 2 capital]] measure?", "bt-q");
     const qErr = el.createDiv({ cls: "bt-error" });
     const aIn = area(el, "Answer", d.a, 3, "A single line", "bt-a");
 
-    // Concepts: links to notes in the question and answer, read live from the draft.
-    el.createDiv({ cls: "bt-label", text: "Concepts · links in the question and answer" });
-    const conceptsBox = el.createDiv({ cls: "bt-chips" });
-    el.createDiv({ cls: "bt-label", text: "Related through concepts" });
-    const viaBox = el.createDiv({ cls: "bt-via" });
+    // 2. Source and deck
+    const sd = this.section(el, "sourceDeck", "Source and deck");
+    const sourceIn = input(sd.body, F.source, d.source, "A vault file ([[…]]) or text");
+    sourceIn.addClass("bt-source");
+    const deckIn = input(sd.body, F.deck, d.deck, "Anki deck name");
+    deckIn.addClass("bt-deck");
+    setIcon(deckIn.parentElement!.createSpan({ cls: "bt-select-icon" }), "chevrons-up-down");
+    sd.body.createDiv({ cls: "bt-muted bt-hint", text: "Only cards with a deck are synced with Anki." });
+    new InlineSuggest(deckIn, (q) => this.valueItems(q, (x) => this.store.deckOf(x)), (it) => { deckIn.value = it.value; sync(); }, true);
+    new InlineSuggest(sourceIn, (q) => this.fileItems(q), (it) => {
+      const v = sourceIn.value;
+      const k = v.lastIndexOf(",");
+      sourceIn.value = (k >= 0 ? v.slice(0, k + 1) + " " : "") + it.value;
+      sync();
+    });
+
+    // 3. Concepts and related cards
+    const cn = this.section(el, "connections", "Connections");
+    cn.body.createDiv({ cls: "bt-label", text: "Concepts · links in the question and answer" });
+    const conceptsBox = cn.body.createDiv({ cls: "bt-chips" });
+    cn.body.createDiv({ cls: "bt-label", text: F.related });
+    const chips = cn.body.createDiv({ cls: "bt-chips" });
+    const connWrap = cn.body.createDiv();
+    const connIn = connWrap.createEl("input", { type: "text", placeholder: "Relate to… (search by question)", cls: "bt-input" });
+    const viaLine = cn.body.createDiv({ cls: "bt-via-line" });
+    const viaBox = cn.body.createDiv({ cls: "bt-via" });
+    let conceptCount = 0;
+    const summarize = () => cn.setSummary(plural(conceptCount, "concept") + (d.conns.length ? " · " + d.conns.length + " related" : ""));
+
     const drawConcepts = () => {
       const list = this.store.conceptsInText(d.q, d.a, pathNow());
+      conceptCount = list.length;
+      summarize();
       conceptsBox.empty();
       if (!list.length) conceptsBox.createSpan({ cls: "bt-muted", text: "None yet. Write [[a note]] in the question or answer to link this card to a concept." });
+      const indexed = new Set(this.store.allConcepts().map((e) => e.concept.key));
       for (const k of list) {
         const chip = conceptsBox.createDiv({ cls: "bt-chip bt-chip-concept is-clickable" + (k.exists ? "" : " is-ghost") });
-        setIcon(chip.createSpan({ cls: "bt-chip-icon" }), k.exists ? "file-text" : "file-plus");
         chip.createSpan({ cls: "bt-chip-text", text: k.name });
         if (!k.exists) chip.createSpan({ cls: "bt-chip-note", text: "no note yet" });
-        chip.setAttr("title", k.exists ? "Open the note" : "Create the note");
-        chip.addEventListener("click", () => { void this.openConcept(k, pathNow()); });
-        const f = chip.createSpan({ cls: "bt-chip-x", attr: { "aria-label": "Show cards mentioning it" } });
-        setIcon(f, "filter");
-        f.addEventListener("click", (e) => { e.stopPropagation(); this.setConcept(k.key); });
+        const hasPage = indexed.has(k.key);
+        chip.setAttr("title", hasPage ? "Open the concept page" : k.exists ? "Open the note" : "Create the note");
+        chip.addEventListener("click", () => {
+          if (hasPage) this.openPage(k.key);
+          else void this.openConceptNote(k, pathNow());
+        });
+        const f = chip.createSpan({ cls: "bt-chip-x", attr: { "aria-label": k.exists ? "Open the note" : "Create the note" } });
+        setIcon(f, k.exists ? "file-text" : "file-plus");
+        f.addEventListener("click", (e) => { e.stopPropagation(); void this.openConceptNote(k, pathNow()); });
       }
-      viaBox.empty();
       const groups = this.store.relatedByConcept(list, isNew ? null : this.selKey).filter((g) => g.cards.length);
-      if (!groups.length) viaBox.createSpan({ cls: "bt-muted", text: list.length ? "No other card mentions these concepts yet." : "—" });
+      const others = new Set(groups.flatMap((g) => g.cards.map(cardKey)));
+      viaLine.empty();
+      viaBox.empty();
+      if (!list.length) return;
+      if (!others.size) {
+        viaLine.createSpan({ text: "No other card mentions these concepts yet." });
+      } else {
+        viaLine.createSpan({ text: plural(others.size, "other card") + " share these concepts · " });
+        const t = viaLine.createSpan({ cls: "bt-link", text: this.cfg.open.via ? "Hide" : "Show" });
+        t.addEventListener("click", () => {
+          this.cfg.open.via = !this.cfg.open.via;
+          void this.plugin.saveSettings();
+          drawConcepts();
+        });
+      }
+      viaLine.createSpan({ text: " · " });
+      const mapLink = viaLine.createSpan({ cls: "bt-link", text: this.cfg.showMap ? "Hide concept map" : "Concept map" });
+      mapLink.addEventListener("click", () => { this.toggleMap(); drawConcepts(); });
+      if (!this.cfg.open.via) return;
       for (const g of groups) {
         const grp = viaBox.createDiv({ cls: "bt-via-group" });
         const h = grp.createDiv({ cls: "bt-via-head" });
         const name = h.createSpan({ cls: "bt-concept-link" + (g.concept.exists ? "" : " is-ghost"), text: g.concept.name });
-        name.setAttr("title", "Show cards mentioning " + g.concept.name);
-        name.addEventListener("click", () => this.setConcept(g.concept.key));
+        name.setAttr("title", "Open the concept page");
+        name.addEventListener("click", () => this.openPage(g.concept.key));
         h.createSpan({ cls: "bt-tree-count", text: " " + g.cards.length });
         for (const o of g.cards) {
           const r = grp.createDiv({ cls: "bt-via-card", text: plainValue(o.q) || "(no question)" });
@@ -487,24 +886,11 @@ export class BankView extends ItemView {
       }
     };
 
-    const deckIn = input(el, F.deck, d.deck, "Anki deck name");
-    deckIn.addClass("bt-deck");
-
-    const sourceIn = input(el, F.source, d.source, "A vault file ([[…]]) or text");
-    sourceIn.addClass("bt-source");
-    new InlineSuggest(deckIn, (q) => this.valueItems(q, (x) => plainValue(this.fieldOf(x, F.deck))), (it) => { deckIn.value = it.value; sync(); });
-    new InlineSuggest(sourceIn, (q) => this.fileItems(q), (it) => {
-      const v = sourceIn.value;
-      const k = v.lastIndexOf(",");
-      sourceIn.value = (k >= 0 ? v.slice(0, k + 1) + " " : "") + it.value;
-      sync();
-    });
-
     // Related cards: only this card's own Related field. (Links from other cards show in the concept map.)
-    el.createDiv({ cls: "bt-label", text: F.related });
-    const chips = el.createDiv({ cls: "bt-chips" });
     const drawChips = () => {
       chips.empty();
+      summarize();
+      if (!d.conns.length) chips.createSpan({ cls: "bt-muted", text: "None." });
       d.conns.forEach((conn, i) => {
         const t = conn.key.startsWith("?") ? null : this.store.get(conn.key);
         const chip = this.chip(chips, t ? plainValue(t.q) : plainValue(conn.raw || conn.key.slice(1)) + " (not a card)", t ? "" : "is-broken", t ? () => this.selectCard(t) : null);
@@ -519,9 +905,6 @@ export class BankView extends ItemView {
         });
       });
     };
-    drawChips();
-    const connWrap = el.createDiv();
-    const connIn = connWrap.createEl("input", { type: "text", placeholder: "Relate to… (search by question)", cls: "bt-input" });
     new InlineSuggest(connIn, (q) => this.cardItems(q, d), (it) => {
       d.conns.push({ key: it.value });
       const t = this.store.get(it.value);
@@ -531,8 +914,25 @@ export class BankView extends ItemView {
       sync();
     });
 
-    el.createDiv({ cls: "bt-label", text: "Line that will be written to the note" });
-    const preview = el.createDiv({ cls: "bt-preview" });
+    // 4. Advanced details
+    const adv = this.section(el, "advanced", "Advanced details");
+    adv.setSummary("Markdown, id");
+    adv.body.createDiv({ cls: "bt-label", text: "Line that will be written to the note" });
+    const preview = adv.body.createDiv({ cls: "bt-preview" });
+    const facts = adv.body.createDiv({ cls: "bt-facts" });
+    const fact = (label: string, value: string, cls = "") => {
+      const r = facts.createDiv({ cls: "bt-fact" });
+      r.createSpan({ cls: "bt-fact-label", text: label });
+      r.createSpan({ cls: "bt-fact-value " + cls, text: value });
+    };
+    if (isNew) fact("Card id", "^" + (this.plannedIds.get("new") || ""), "bt-mono");
+    else if (c) {
+      fact("Note", c.path + ", line " + (c.line + 1));
+      if (c.id) fact("Card id", "^" + c.id, "bt-mono");
+      else fact("Card id", "none yet · gets ^" + this.plannedIds.get(this.selKey!) + " on save", "bt-warn");
+      const st = this.store.ankiStatus(c);
+      fact("Anki", st === "none" ? "Not synced (no deck)" : ANKI_LABEL[st]);
+    }
 
     const actions = el.createDiv({ cls: "bt-actions" });
     if (!isNew && c) {
@@ -545,6 +945,10 @@ export class BankView extends ItemView {
     setIcon(saveBtn.createSpan(), "check");
     saveBtn.createSpan({ text: "Save" });
 
+    const summarizeSD = () => {
+      const vals = [plainValue(d.source), d.deck.trim()].filter(Boolean);
+      sd.setSummary(vals.length ? vals.join(" · ") : "Empty");
+    };
     const sync = () => {
       d.q = qIn.value.replace(/[\r\n]+/g, " ");
       d.a = aIn.value.replace(/[\r\n]+/g, " ");
@@ -553,6 +957,7 @@ export class BankView extends ItemView {
       this.dirty = true;
       qErr.setText("");
       preview.setText(this.previewLine(d));
+      summarizeSD();
       drawConcepts();
     };
     for (const i of [qIn, aIn, deckIn, sourceIn]) i.addEventListener("input", sync);
@@ -562,6 +967,8 @@ export class BankView extends ItemView {
       else if (k.key === "Enter") k.preventDefault();
     });
     preview.setText(this.previewLine(d));
+    summarizeSD();
+    drawChips();
     drawConcepts();
     this.editorLive = () => { drawConcepts(); drawChips(); };
 
@@ -608,7 +1015,7 @@ export class BankView extends ItemView {
   }
 
   /** Open a concept's note in a new tab (Obsidian creates it if it doesn't exist yet). */
-  private async openConcept(k: Concept, sourcePath: string): Promise<void> {
+  private async openConceptNote(k: Concept, sourcePath: string): Promise<void> {
     await this.app.workspace.openLinkText(k.linkpath, sourcePath, "tab");
   }
 
@@ -629,6 +1036,7 @@ export class BankView extends ItemView {
     this.dirty = false;
     this.renderList();
     this.renderEditor();
+    if (this.narrow) this.listEl.scrollTop = this.listScroll;
   }
 
   private setNewNote(path: string): void {
@@ -745,10 +1153,19 @@ export class BankView extends ItemView {
   }
 }
 
-// ── small DOM helpers ──────────────────────────────────────────────────────
+// ── small helpers ──────────────────────────────────────────────────────────
 
 export function noteName(path: string): string {
   return path.split("/").pop()!.replace(/\.md$/, "");
+}
+
+/** Card text as it reads: links without brackets (embeds are left as they are). */
+function readable(s: string): string {
+  return s.replace(/(^|[^!])\[\[([^\]|]+?)(?:\|([^\]]*))?\]\]/g, (_m, pre: string, t: string, al?: string) => pre + (al || (t.split("#")[0] ?? ""))).trim();
+}
+
+function plural(n: number, word: string): string {
+  return n + " " + word + (n === 1 ? "" : "s");
 }
 
 function fillSelect(sel: HTMLSelectElement, allLabel: string, values: string[], current: string, show: (v: string) => string) {
@@ -756,13 +1173,6 @@ function fillSelect(sel: HTMLSelectElement, allLabel: string, values: string[], 
   sel.createEl("option", { value: "", text: allLabel });
   for (const v of values) sel.createEl("option", { value: v, text: show(v) });
   sel.value = values.includes(current) ? current : "";
-}
-
-function pill(parent: HTMLElement, icon: string, text: string, cls = ""): HTMLElement {
-  const p = parent.createSpan({ cls: "bt-pill " + cls });
-  if (icon) setIcon(p.createSpan({ cls: "bt-pill-icon" }), icon);
-  p.createSpan({ text });
-  return p;
 }
 
 function area(parent: HTMLElement, label: string, value: string, rows: number, ph: string, cls: string): HTMLTextAreaElement {

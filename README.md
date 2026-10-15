@@ -110,27 +110,45 @@ Since they're ordinary links, concepts also work outside the plugin: a concept n
 
 | Area | What it does |
 |------|--------------|
-| **Concepts** (left) | Every concept, with how many cards mention it, most-used first. Click one to show only its cards; *No concepts* collects cards that don't link to any. |
-| **List** (middle) | Every matching card with its answer. Concept links are highlighted: click one to filter by it. A link to another card opens that card. |
-| **Pills** | Source, deck, ↔ number of links in the card's *Related* field, the note, **no id** when the card has no block id, and the Anki status. |
-| **Toolbar** | Search across questions, answers and every field, a source filter (each linked file, plus any plain-text source), a note filter, **Map**, **Anki** and **New card**. |
-| **Map** | The concept map of the open card, under the list. The card is on the left, its concepts in the middle, and the other cards that mention each concept on the right. A card sharing several concepts is drawn once with a line from each, so the cards that bridge concepts stand out. Related cards get ↔, or a dashed line when they share no concept. Clicking a card centers the map on it; clicking a concept filters the bank. The map shrinks to fit the column; **Expand** in its header hides the list so the map gets the whole middle column, and **Back to list** restores it. |
-| **Editor** (right) | Opens when you click a card. In a narrow pane it moves below the list. |
+| **Header** | Where you are (*All cards*, a concept you're filtering by, or a concept page), plus two buttons: the **concept map** and **Sync with Anki**. |
+| **Search bar** | Searches questions, answers and every field. **Filter** opens a source filter (each linked file, plus any plain-text source) and a note filter; the button shows how many are on. **New card** opens an empty card. |
+| **Concepts** (left) | Every concept, with how many cards mention it, most-used first. Click one to open its [concept page](#concept-pages). *All cards* shows the whole bank; *No concepts* lists the cards that don't link to any. |
+| **List** (middle) | The matching cards, as plain text. **Compact** shows one line of question and one of answer; **Expanded** shows them in full, with the source, deck, note, the number of related cards, and **no id** when the card has no block id. Both show the card's Anki status (*Anki: new*, *Anki: changed*, *Synced with Anki*, *Anki: will be deleted*). The choice is remembered. |
+| **Map** | The concept map of the open card, under the list. The card is on the left, its concepts in the middle, and the other cards that mention each concept on the right. A card sharing several concepts is drawn once with a line from each, so the cards that bridge concepts stand out. Related cards get ↔, or a dashed line when they share no concept. Clicking a card centers the map on it; clicking a concept opens its page. The map shrinks to fit the column; **Expand** in its header hides the list so the map gets the whole middle column, and **Back to list** restores it. |
+| **Editor** (right) | Opens when you click a card. |
+
+In a narrow pane (or on a phone) the bank shows one panel at a time: opening a card replaces the list with the editor, and **Cards** at its top brings you back to the list where you left it, with the same search, filters and scroll position. In a very narrow pane the concepts become a strip above the list.
+
+The bank uses your theme's colors and accent color, in light and dark mode.
+
+## Concept pages
+
+Clicking a concept opens a page that brings together everything your cards say about it. The editor keeps its state underneath: **Flashcard bank** in the header takes you back.
+
+![A concept page: the cards about Regulatory capital, nearby concepts and sources](images/concept-page.png)
+
+- **Overview**: the cards that mention the concept (click a question to show its answer, source and note, and **Edit card** to open it in the editor), the concepts that share cards with it under **Explore nearby**, with how many cards they share, and the sources those cards cite. Clicking a source shows the bank filtered by the concept and that source.
+- **Connections**: for each concept that shares cards with this one, the cards that link the two. Click a card to read its answer, or the other concept to go to its page.
+- **Show in bank** filters the list by the concept; **Open note** opens the concept's note (or **Create note**, if it doesn't exist yet).
 
 ## The editor
 
+The editor has the question and answer at the top, and three sections below that you can fold away. Which ones are open is remembered.
+
 - **Question / Answer**: single line each. Enter doesn't add line breaks (Ctrl/Cmd+Enter saves).
-- **Concepts**: the concepts linked in the question and answer, updated as you type. Click one to open its note (or create it, if it doesn't exist yet); the filter icon shows every card that mentions it.
-- **Related through concepts**: the other cards that mention the same concepts, grouped by concept. Click a card to open it.
-- **Deck**: the Anki deck. Suggests decks already in use.
-- **Source**: free text, or type part of a file name and pick it to insert `[[file]]`. Separate several sources with commas.
-- **Related**: the links in this card's own *Related* field (× removes one). Type in the search box to add a link. Links written on other cards to this one aren't listed here; they show in the concept map.
-- **Line that will be written to the note** shows exactly what Save will write.
+- **Source and deck**
+  - **Source**: free text, or type part of a file name and pick it to insert `[[file]]`. Separate several sources with commas.
+  - **Deck**: the Anki deck. Click the field to pick a deck already in use, or type a new one. Only cards with a deck are synced.
+- **Connections**
+  - **Concepts**: the concepts linked in the question and answer, updated as you type. Click one to open its concept page; the note icon opens its note (or creates it, if it doesn't exist yet).
+  - **Related**: the links in this card's own *Related* field (× removes one). Type in the search box to add a link. Links written on other cards to this one aren't listed here; they show in the concept map.
+  - Below them, how many other cards share these concepts: **Show** lists them, grouped by concept, and **Concept map** shows the map.
+- **Advanced details**: the exact line that Save will write to the note, the note and line, the card's block id (or the one it will get on save), and its Anki status.
 - **Open in note** opens the note at the card's line in a new tab.
 
 ### Creating cards
 
-**New card** opens an empty form. The **Appended to the end of** note picker defaults to the note of the card you had open, or the last note you added to. The card is appended at the end of that note after a blank line.
+**New card** opens an empty form. The **Added at the end of** note picker defaults to the note of the card you had open, or the last note you added to. The card is appended at the end of that note after a blank line.
 
 New cards start with the *New card prefix* from the settings, the source and related fields (empty ones as `[Field:: ]`), the deck if you gave one, the card tag, and a fresh block id.
 
@@ -171,16 +189,16 @@ Only cards with a **deck**. Writing `[Deck:: Finance::Risk]` on a card, or filli
 
 Each card shows its state in the bank:
 
-| Pill | Meaning |
+| Status | Meaning |
 |------|---------|
 | `Anki: new` | Has a deck, not in Anki yet |
-| `Anki ✓` | In Anki and up to date |
+| `Synced with Anki` | In Anki and up to date |
 | `Anki: changed` | Question, answer or deck changed since the last sync |
 | `Anki: will be deleted` | Was synced, but its deck was cleared; the next sync deletes it from Anki |
 
 ### Syncing
 
-Click **Anki** in the toolbar, or run **Flashcard Bank: Sync with Anki**. The plugin reads Anki and shows a summary before changing anything:
+Click **Sync with Anki** (the circular arrows at the top of the bank), or run **Flashcard Bank: Sync with Anki**. The plugin reads Anki and shows a summary before changing anything:
 
 ![The sync summary shown before anything changes in Anki](images/anki-sync.png)
 

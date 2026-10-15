@@ -1,5 +1,5 @@
 import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile } from "obsidian";
-import { CardStore, DEFAULT_ANKI, DEFAULT_FIELDS, DEFAULT_SETTINGS, FieldNames, Settings } from "./store";
+import { CardStore, DEFAULT_ANKI, DEFAULT_FIELDS, DEFAULT_OPEN, DEFAULT_SETTINGS, FieldNames, Settings } from "./store";
 import { BankView, VIEW_TYPE } from "./view";
 import { AnkiConnect } from "./anki";
 import { syncWithAnki } from "./ankiui";
@@ -91,6 +91,8 @@ export default class FlashcardBankPlugin extends Plugin {
       fields: { ...DEFAULT_FIELDS, ...fields },
       anki: { ...DEFAULT_ANKI, ...(data.anki || {}) },
       ankiMap: data.ankiMap || {},
+      density: data.density === "expanded" ? "expanded" : "compact",
+      open: { ...DEFAULT_OPEN, ...(data.open || {}) },
     };
   }
 

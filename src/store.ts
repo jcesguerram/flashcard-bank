@@ -43,7 +43,19 @@ export interface Settings {
   fields: FieldNames;
   showMap: boolean;
   mapExpanded: boolean;
+  density: "compact" | "expanded";
+  open: SectionState;
 }
+
+/** Which collapsible parts of the editor are open (remembered between sessions). */
+export interface SectionState {
+  sourceDeck: boolean;
+  connections: boolean;
+  advanced: boolean;
+  via: boolean;
+}
+
+export const DEFAULT_OPEN: SectionState = { sourceDeck: true, connections: true, advanced: false, via: false };
 
 export const DEFAULT_FIELDS: FieldNames = { source: "Source", related: "Related", deck: "Deck" };
 
@@ -57,6 +69,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ankiMap: {},
   showMap: false,
   mapExpanded: false,
+  density: "compact",
+  open: { ...DEFAULT_OPEN },
 };
 
 export function cardKey(c: Card): string {

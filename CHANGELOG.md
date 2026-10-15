@@ -2,6 +2,22 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.1.0 — 2026-10-15
+
+### New
+
+- **Concept pages.** Clicking a concept opens a page that brings together everything your cards say about it. **Overview** lists its cards (click one to see the answer), the concepts that share cards with it, with how many, and the sources the cards cite. **Connections** shows, for each neighboring concept, the cards that link the two. From a page you can filter the bank by the concept, open its note, or edit any of its cards.
+- **Compact and expanded list.** Compact shows one line of question and answer plus the Anki status; expanded shows everything, with source, deck and note. The choice is remembered.
+- **Narrow screens and phones** show one panel at a time: opening a card replaces the list with the editor, and **Cards** brings you back with the same search, filters and scroll position.
+
+### Changed
+
+- **A cleaner look** that uses your theme's accent color only for what's selected or active. The concepts column has a tinted background, the list shows cards as plain text with a single status line instead of rows of tags, and the source and note filters moved behind a **Filter** button.
+- **The editor is reorganized**: question and answer first, then **Source and deck**, **Connections** (concepts and related cards) and **Advanced details** (the exact line that will be written, the block id and the Anki status). Each section can be folded, and the plugin remembers which are open.
+- Clicking a concept (in the concepts column, the editor or the concept map) opens its page instead of filtering the list. **Show in bank** on the page, or the concept's name above the list, filters as before.
+- The deck field lists the decks already in use as soon as you click it.
+- Anki status in the list reads *Synced with Anki* instead of *Anki ✓*.
+
 ## 1.0.1 — 2026-10-14
 
 - Links to other cards are underlined in a way that works on every supported Obsidian version.
