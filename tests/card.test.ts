@@ -4,7 +4,7 @@
 
 import {
   parseCards, rewriteCard, replaceCard, appendCard, newCardLine, idsInText, newId,
-  parseLinks, fieldValue, plainValue, hasTag, textLinks,
+  parseLinks, fieldValue, plainValue, hasTag, textLinks, headingsOf, insertCard,
 } from "../src/card";
 
 declare const require: any;
@@ -129,6 +129,9 @@ for (const c of cards) eq(rewriteCard(c, same(c)), c.raw, "unchanged rewrite is 
   eq(appendCard("a\n", "L"), "a\n\nL\n", "append after text ending in newline");
   eq(appendCard("a", "L"), "a\n\nL\n", "append after text without final newline");
   eq(appendCard("a\n\n", "L"), "a\n\nL\n", "append after blank line");
+  eq(insertCard("a\n", "L", null), { ok: true, text: "a\n\nL\n" }, "insert at end after text");
+  eq(insertCard("a", "L", null), { ok: true, text: "a\n\nL\n" }, "insert at end, no final newline");
+  eq(insertCard("", "L", null), { ok: true, text: "L\n" }, "insert into empty note");
   eq(appendCard("", "L"), "L\n", "append to empty note");
   const used = idsInText(sample);
   ok(used.has("aaa111") && used.has("loolup") && used.has("bbb222"), "ids collected, including one on its own line");
@@ -137,6 +140,52 @@ for (const c of cards) eq(rewriteCard(c, same(c)), c.raw, "unchanged rewrite is 
   const taken = new Set(["000000"]);
   eq(newId(taken, fake), "iiiiii", "newId skips an id already used");
   for (let i = 0; i < 200; i++) ok(/^[a-z0-9]{6}$/.test(newId(new Set())), "id format");
+}
+
+// ── Sections: where new cards go ───────────────────────────────────────────
+{
+  const note = [
+    "---", "title: x", "# not a heading (frontmatter)", "---",
+    "Intro text",
+    "## Capital",
+    "- [?] Q1 – A1 #flashcard ^aaa001",
+    "",
+    "### Nivel 1",
+    "- Q2 – A2 #flashcard",
+    "  continuation of Q2",
+    "### Nivel 2",
+    "Some paragraph.",
+    "",
+    "```",
+    "## not a heading (code)",
+    "```",
+    "## Liquidez ##",
+    "",
+    "## Capital",
+    "",
+  ].join("\n");
+  const hs = headingsOf(note);
+  eq(hs.map((h) => [h.level, h.text, h.nth]), [[2, "Capital", 0], [3, "Nivel 1", 0], [3, "Nivel 2", 0], [2, "Liquidez", 0], [2, "Capital", 1]], "headings: frontmatter and code skipped, closing #s dropped, repeats numbered");
+  const L = "- NEW #flashcard ^new001";
+  const at = (sec: any) => { const r = insertCard(note, L, sec); return r.ok ? r.text.split("\n") : null; };
+  let out = at({ level: 2, text: "Capital", nth: 0 })!;
+  eq(out.slice(5, 9), ["## Capital", "- [?] Q1 – A1 #flashcard ^aaa001", L, ""], "section: joins its list, before the subsection's blank line");
+  out = at({ level: 3, text: "Nivel 1", nth: 0 })!;
+  eq(out.slice(9, 13), ["- Q2 – A2 #flashcard", "  continuation of Q2", L, "### Nivel 2"], "section: after a card's continuation line, still in the list");
+  out = at({ level: 3, text: "Nivel 2", nth: 0 })!;
+  eq(out.slice(12, 18), ["Some paragraph.", "", "```", "## not a heading (code)", "```", ""], "section: code block stays in its section");
+  eq(out[18], L, "section: after a paragraph/code, set off by a blank line");
+  out = at({ level: 2, text: "Liquidez", nth: 0 })!;
+  eq(out.slice(17, 21), ["## Liquidez ##", "", L, ""], "empty section: blank line after the heading");
+  out = at({ level: 2, text: "Capital", nth: 1 })!;
+  eq(out.slice(-4), ["## Capital", "", L, ""], "second heading with the same name");
+  ok(!insertCard(note, L, { level: 2, text: "Gone", nth: 0 }).ok, "missing section refused");
+  ok(!insertCard(note, L, { level: 3, text: "Capital", nth: 0 }).ok, "level must match");
+  eq(insertCard("a\n- c1 #flashcard\n", L, null), { ok: true, text: "a\n- c1 #flashcard\n" + L + "\n" }, "end of note: joins a final list");
+  eq(insertCard("a\n- c1 #flashcard", L, null), { ok: true, text: "a\n- c1 #flashcard\n" + L + "\n" }, "end of note without final newline");
+  eq(insertCard("a\r\n", L, null), { ok: true, text: "a\r\n\r\n" + L + "\r\n" }, "CRLF kept");
+  eq(insertCard("\n\n", L, null), { ok: true, text: L + "\n" }, "blank note");
+  eq(insertCard("## H\n", L, { level: 2, text: "H", nth: 0 }), { ok: true, text: "## H\n\n" + L + "\n" }, "heading at end of note");
 }
 
 // ── Indentation carries no meaning ─────────────────────────────────────────

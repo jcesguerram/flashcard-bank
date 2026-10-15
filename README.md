@@ -148,7 +148,12 @@ The editor has the question and answer at the top, and three sections below that
 
 ### Creating cards
 
-**New card** opens an empty form. The **Added at the end of** note picker defaults to the note of the card you had open, or the last note you added to. The card is appended at the end of that note after a blank line.
+**New card** opens an empty form with two fields that say where the card goes:
+
+- **Note**: defaults to the note of the card you had open, or the last note you added to. Click it to pick another; notes that already have cards are listed first.
+- **Section**: **End of note**, or one of the note's headings, indented by level. A card added to a section goes at the end of that heading's own content, right before the next heading of any level. So picking a heading that has subheadings puts the card before the first subheading. The section you last used for each note is selected next time.
+
+The card goes right after the last line of that section (or of the note). If that line belongs to a list, such as other cards, the new card joins the list; otherwise it's set off by a blank line. If the section disappeared from the note before you saved, nothing is written and the plugin asks you to pick another place.
 
 New cards start with the *New card prefix* from the settings, the source and related fields (empty ones as `[Field:: ]`), the deck if you gave one, the card tag, and a fresh block id.
 

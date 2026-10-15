@@ -5,7 +5,7 @@
 import { App, TFile, debounce, normalizePath } from "obsidian";
 import { AnkiMap, SyncCard, hashContent, toAnkiText } from "./sync";
 import {
-  Card, CardEdit, ConnLink, parseCards, rewriteCard, replaceCard, appendCard, newCardLine,
+  Card, CardEdit, ConnLink, SectionRef, parseCards, rewriteCard, replaceCard, insertCard, newCardLine,
   idsInText, newId, fieldValue, getField, parseLinks, safeAlias, plainValue, textLinks,
 } from "./card";
 
@@ -45,6 +45,7 @@ export interface Settings {
   mapExpanded: boolean;
   density: "compact" | "expanded";
   open: SectionState;
+  lastSection: Record<string, SectionRef>; // per note: the section new cards last went into
 }
 
 /** Which collapsible parts of the editor are open (remembered between sessions). */
@@ -71,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mapExpanded: false,
   density: "compact",
   open: { ...DEFAULT_OPEN },
+  lastSection: {},
 };
 
 export function cardKey(c: Card): string {
@@ -431,7 +433,8 @@ export class CardStore {
   }
 
   /** Create a card at the end of the note at `path`. */
-  async create(path: string, draft: Draft, plannedIds: Map<string, string>): Promise<string> {
+  /** Add a new card to a note: at the end of `section`'s own content, or at the end of the note. */
+  async create(path: string, draft: Draft, plannedIds: Map<string, string>, section: SectionRef | null = null): Promise<string> {
     const file = this.fileOf(path);
     const related = await this.prepareConns(path, null, draft.conns, plannedIds);
     const s = this.settings();
@@ -446,7 +449,11 @@ export class CardStore {
         { [f.source]: draft.source, [f.related]: related ?? "", [f.deck]: draft.deck },
         this.order, s.tag, id
       );
-      return appendCard(text, line);
+      const r = insertCard(text, line, section);
+      if (!r.ok) {
+        throw new SaveError("missing", "The section \"" + (section?.text ?? "") + "\" isn't in the note anymore. Pick another place for the card.");
+      }
+      return r.text;
     });
     return path + "#^" + id;
   }

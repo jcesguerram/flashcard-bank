@@ -93,6 +93,7 @@ export default class FlashcardBankPlugin extends Plugin {
       ankiMap: data.ankiMap || {},
       density: data.density === "expanded" ? "expanded" : "compact",
       open: { ...DEFAULT_OPEN, ...(data.open || {}) },
+      lastSection: { ...(data.lastSection || {}) },
     };
   }
 

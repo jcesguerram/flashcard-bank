@@ -364,3 +364,105 @@ export function appendCard(text: string, line: string): string {
   if (text.endsWith(eol)) return text + eol + line + eol;
   return text + eol + eol + line + eol;
 }
+
+// ── Sections ────────────────────────────────────────────────────────────────
+
+/** A heading in a note. `nth` tells apart headings with the same level and text. */
+export interface Heading {
+  line: number;
+  level: number;
+  text: string;
+  nth: number;
+}
+
+/** Where a new card goes: after the own content of a heading (null: the end of the note). */
+export interface SectionRef {
+  level: number;
+  text: string;
+  nth: number;
+}
+
+const HEADING_RE = /^(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+
+/** The note's headings, in order. Skips frontmatter and fenced code blocks. */
+export function headingsOf(text: string): Heading[] {
+  const { lines } = splitLines(text);
+  const out: Heading[] = [];
+  const seen = new Map<string, number>();
+  let start = 0;
+  if (lines[0] === "---") {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i] === "---" || lines[i] === "...") {
+        start = i + 1;
+        break;
+      }
+    }
+  }
+  let fenceMark = "";
+  for (let i = start; i < lines.length; i++) {
+    const ln = lines[i] ?? "";
+    const f = ln.match(FENCE_RE);
+    if (f) {
+      if (!fenceMark) fenceMark = f[1] ?? "";
+      else if (f[1] === fenceMark) fenceMark = "";
+      continue;
+    }
+    if (fenceMark) continue;
+    const m = ln.match(HEADING_RE);
+    if (!m) continue;
+    const level = (m[1] ?? "").length;
+    const t = (m[2] ?? "").trim();
+    if (!t) continue;
+    const k = level + "\u0000" + t;
+    const nth = seen.get(k) ?? 0;
+    seen.set(k, nth + 1);
+    out.push({ line: i, level, text: t, nth });
+  }
+  return out;
+}
+
+export type InsertResult = { ok: true; text: string } | { ok: false; reason: "missing" };
+
+/**
+ * Insert a card line at the end of a section's own content (up to the next
+ * heading of any level), or at the end of the note when `section` is null.
+ * The card goes right after the last non-blank line; it joins a list that ends
+ * there, and is set off by a blank line from anything else.
+ */
+export function insertCard(text: string, line: string, section: SectionRef | null): InsertResult {
+  const { lines, eol } = splitLines(text);
+  if (text === "") return { ok: true, text: line + eol };
+  let from = 0;
+  let to = lines.length; // exclusive
+  if (section) {
+    const hs = headingsOf(text);
+    const i = hs.findIndex((h) => h.level === section.level && h.text === section.text && h.nth === section.nth);
+    const h = hs[i];
+    if (!h) return { ok: false, reason: "missing" };
+    from = h.line;
+    to = hs[i + 1]?.line ?? lines.length;
+  }
+  let last = to - 1;
+  while (last > from && !(lines[last] ?? "").trim()) last--;
+  if (!section && !(lines[last] ?? "").trim()) {
+    // The note is only blank lines.
+    return { ok: true, text: line + eol };
+  }
+  // Does a list end on that line? Walk back through its paragraph looking for a list item.
+  let inList = false;
+  for (let k = last; k >= from && (lines[k] ?? "").trim(); k--) {
+    const ln = lines[k] ?? "";
+    if (section && k === from) break; // the heading itself
+    if (HEADING_RE.test(ln)) break;
+    if (LIST_RE.test(ln)) {
+      inList = true;
+      break;
+    }
+  }
+  const add = inList ? [line] : ["", line];
+  lines.splice(last + 1, 0, ...add);
+  // A note that didn't end with a line break still gets one after the card.
+  let out = lines.join(eol);
+  if (last + 1 + add.length === lines.length) out += eol;
+  return { ok: true, text: out };
+}

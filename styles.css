@@ -193,10 +193,12 @@
 .bt-ed-head { display: flex; align-items: baseline; gap: 8px; }
 .bt-ed-title { font-weight: var(--font-semibold); font-size: var(--font-ui-medium); }
 .bt-ed-note { flex: 1; text-align: right; font-size: var(--font-ui-smaller); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bt-ed-close { align-self: center; }
+.bt-ed-close { align-self: center; margin-left: auto; }
 .bt-ed-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: var(--font-ui-smaller); color: var(--text-muted); margin: 6px 0 0; }
 .bt-note-pick { flex: 1; min-width: 160px; }
 .bt-note-pick input { width: 100%; }
+.bt-ed-where { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; margin-top: 10px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.bt-ed-where .bt-section { width: 100%; }
 .bt-label { font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-normal); margin: 14px 0 5px; }
 .bt-input { width: 100%; }
 textarea.bt-input { resize: vertical; font-family: inherit; }

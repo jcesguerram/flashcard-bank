@@ -2,6 +2,17 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.2.0 — 2026-10-15
+
+### New
+
+- **Choose the section for a new card.** Below the note, a **Section** list shows the note's headings. The card goes at the end of that heading's own content, before the next heading; **End of note** is still there. The section you last used for each note is selected next time.
+
+### Changed
+
+- A new card added right after a list (other cards, for example) now joins that list instead of being set off by a blank line. After anything else it still gets a blank line before it.
+- If the chosen section is no longer in the note when you save, nothing is written and you're asked to pick another place.
+
 ## 1.1.0 — 2026-10-15
 
 ### New

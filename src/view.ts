@@ -1,7 +1,7 @@
 // The "Flashcard Bank" tab: concepts column, card list, editor, concept map and concept pages.
 
 import { ItemView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from "obsidian";
-import { Card, rewriteCard, newCardLine, plainValue, safeAlias, newId, parseLinks } from "./card";
+import { Card, SectionRef, headingsOf, rewriteCard, newCardLine, plainValue, safeAlias, newId, parseLinks } from "./card";
 import { AnkiStatus, CardStore, Concept, Draft, SaveError, SectionState, cardKey, pathOfKey } from "./store";
 import { InlineSuggest } from "./suggest";
 import { drawConceptMap } from "./map";
@@ -47,6 +47,7 @@ export class BankView extends ItemView {
   private dirty = false;
   private discardArmed: string | null = null;
   private newNote = "";
+  private newSection: SectionRef | null = null; // where in the note a new card goes (null: the end)
   private plannedIds = new Map<string, string>();
   private saving = false;
 
@@ -230,6 +231,7 @@ export class BankView extends ItemView {
     this.selKey = "new";
     this.original = null;
     this.newNote = path;
+    this.newSection = this.cfg.lastSection[path] ?? null;
     this.plannedIds = new Map([["new", newId(new Set(this.idsIn(path)))]]);
     this.draft = { q: "", a: "", source: "", deck: "", conns: [] };
     this.dirty = false;
@@ -789,12 +791,20 @@ export class BankView extends ItemView {
     });
 
     if (isNew) {
-      const meta = el.createDiv({ cls: "bt-ed-meta" });
-      meta.createSpan({ text: "Added at the end of " });
-      const wrap = meta.createDiv({ cls: "bt-note-pick" });
+      // Where the card goes: a note, and a section of it (or its end).
+      const where = el.createDiv({ cls: "bt-ed-where" });
+      where.createSpan({ cls: "bt-ed-where-label", text: "Note" });
+      const wrap = where.createDiv({ cls: "bt-note-pick" });
       const inp = wrap.createEl("input", { type: "text", value: this.newNote, placeholder: "Target note" });
       new InlineSuggest(inp, (q) => this.noteItems(q), (it) => { inp.value = it.value; this.setNewNote(it.value); }, true);
       inp.addEventListener("change", () => this.setNewNote(inp.value));
+      where.createSpan({ cls: "bt-ed-where-label", text: "Section" });
+      const sel = where.createEl("select", { cls: "dropdown bt-section" });
+      sel.createEl("option", { value: "", text: "End of note" });
+      sel.addEventListener("change", () => {
+        this.newSection = sel.value ? (JSON.parse(sel.value) as SectionRef) : null;
+      });
+      void this.fillSections(sel, this.newNote);
     }
 
     // 1. Question and answer
@@ -988,8 +998,10 @@ export class BankView extends ItemView {
       try {
         let key: string;
         if (isNew) {
-          key = await this.store.create(this.newNote, d, this.plannedIds);
+          key = await this.store.create(this.newNote, d, this.plannedIds, this.newSection);
           this.cfg.lastNote = this.newNote;
+          if (this.newSection) this.cfg.lastSection[this.newNote] = this.newSection;
+          else delete this.cfg.lastSection[this.newNote];
           await this.plugin.saveSettings();
         } else {
           key = await this.store.save(c!, d, this.plannedIds);
@@ -1002,6 +1014,11 @@ export class BankView extends ItemView {
         if (err instanceof SaveError) {
           new Notice(err.message, 8000);
           if (err.kind === "changed" && c) await this.reloadAndOpen(cardKey(c), c);
+          if (isNew && err.kind === "missing") {
+            // The chosen section is gone: show the note's current sections again.
+            this.newSection = null;
+            this.renderEditor();
+          }
         } else {
           console.error("[flashcard-bank]", err);
           new Notice("Could not save: " + (err as Error).message);
@@ -1043,11 +1060,39 @@ export class BankView extends ItemView {
     const p = path.trim() ? normalizePath(path.trim()) : "";
     if (p === this.newNote) return;
     this.newNote = p;
+    this.newSection = this.cfg.lastSection[p] ?? null;
     this.plannedIds.set("new", newId(new Set(this.idsIn(this.newNote))));
     // Redraw after the current focus/blur events finish: redrawing removes the input that fired them.
     window.setTimeout(() => {
       if (this.selKey === "new") this.renderEditor();
     }, 0);
+  }
+
+  /** List a note's headings in the section dropdown, indented by level, and select the current one. */
+  private async fillSections(sel: HTMLSelectElement, path: string): Promise<void> {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (!(f instanceof TFile)) {
+      this.newSection = null;
+      return;
+    }
+    const heads = headingsOf(await this.app.vault.cachedRead(f));
+    if (path !== this.newNote || !sel.isConnected) return; // the note changed while reading
+    const top = Math.min(...heads.map((h) => h.level));
+    let found = false;
+    for (const h of heads) {
+      const ref: SectionRef = { level: h.level, text: h.text, nth: h.nth };
+      const label = "\u00a0\u00a0\u00a0".repeat(h.level - top) + h.text + (h.nth ? " (" + (h.nth + 1) + ")" : "");
+      const o = sel.createEl("option", { value: JSON.stringify(ref), text: label });
+      const cur = this.newSection;
+      if (cur && cur.level === h.level && cur.text === h.text && cur.nth === h.nth) {
+        o.selected = true;
+        found = true;
+      }
+    }
+    if (!found) {
+      this.newSection = null;
+      sel.value = "";
+    }
   }
 
   /** Re-read the note right away (not waiting for Obsidian's change event) and open the card. */
