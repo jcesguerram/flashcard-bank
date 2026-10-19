@@ -2,6 +2,21 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- **The Deck and Source fields no longer fill themselves in.** Their suggestions start with nothing highlighted: Tab keeps what you typed (or leaves the field empty) and moves on, and Enter only accepts a suggestion you picked with ↓/↑. Before, tabbing past an empty Deck wrote the first deck in the list into the card, which opted it into Anki; typing a new deck name or a plain-text source could be replaced by a suggestion the same way. The note and related-card pickers work as before.
+- **Only one Anki sync at a time.** While a sync runs (from reading Anki until the result), the sync button shows it's busy and ignores clicks, and the command says a sync is already running. Before, a second click could start a second sync and create every new card twice in Anki.
+- **Renaming or moving a note (or a folder) keeps its cards paired with their Anki notes.** Before, editing a card in a renamed note before the next sync made the sync delete its Anki note, review history included, and create a new one; the cards also showed *Anki: new* until then.
+- After you confirm the summary, the plugin reads Anki and your notes again before changing anything, so a summary left open for a while can't act on stale information. (Deletions are still limited to the ones you confirmed.)
+
+### Changed
+
+- The sync shows its progress in a notice (*reading your collection*, then *syncing… 12 of 37*).
+- The summary lists **every** card that will be created and every one that will be deleted, in a scrolling box, each with its note. Cards no longer in Obsidian are listed by their question as it is in Anki, instead of *(card deleted in Obsidian)*.
+- When some cards fail to sync, a window lists each one with the reason, with a **Copy** button, and the details are added to `error.log`. Before, they only went to the developer console.
+
 ## 1.2.0 — 2026-10-15
 
 ### New

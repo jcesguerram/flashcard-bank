@@ -1,6 +1,12 @@
 // A small dropdown of suggestions under an input. Kept in-house (rather than
 // Obsidian's AbstractInputSuggest) so it renders inside the editor panel and
 // behaves the same on every Obsidian version.
+//
+// In free-text mode (fields where what you type is a valid value, like Deck and
+// Source) nothing is highlighted until you move to a suggestion with the arrow
+// keys, Tab always just moves on, and Enter only accepts a suggestion you
+// highlighted. That way typing a new value, or tabbing past an empty field,
+// never swaps in a suggestion you didn't choose.
 
 export interface SuggestItem {
   label: string;
@@ -17,7 +23,8 @@ export class InlineSuggest {
     private input: HTMLInputElement | HTMLTextAreaElement,
     private source: (query: string) => SuggestItem[],
     private pick: (item: SuggestItem) => void,
-    private showEmpty = false
+    private showEmpty = false,
+    private freeText = false
   ) {
     const wrap = input.parentElement as HTMLElement;
     wrap.addClass("bt-suggest-wrap");
@@ -33,7 +40,7 @@ export class InlineSuggest {
     const q = this.input.value;
     if (!q.trim() && !this.showEmpty) return this.close();
     this.items = this.source(q).slice(0, 8);
-    this.active = this.items.length ? 0 : -1;
+    this.active = this.items.length && !this.freeText ? 0 : -1;
     this.render();
   }
 
@@ -68,8 +75,11 @@ export class InlineSuggest {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const n = this.items.length;
-      this.active = (this.active + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+      if (this.active < 0) this.active = e.key === "ArrowDown" ? 0 : n - 1;
+      else this.active = (this.active + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
       this.render();
+    } else if (e.key === "Tab" && this.freeText) {
+      this.close();
     } else if (e.key === "Enter" || e.key === "Tab") {
       if (this.active >= 0) {
         e.preventDefault();

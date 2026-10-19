@@ -1,14 +1,16 @@
-import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile } from "obsidian";
 import { CardStore, DEFAULT_ANKI, DEFAULT_FIELDS, DEFAULT_OPEN, DEFAULT_SETTINGS, FieldNames, Settings } from "./store";
 import { BankView, VIEW_TYPE } from "./view";
 import { AnkiConnect } from "./anki";
 import { syncWithAnki } from "./ankiui";
+import { renameInMap } from "./sync";
 
 export default class FlashcardBankPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   store!: CardStore;
   anki = new AnkiConnect(() => this.settings.anki.url);
   ankiModels: Record<string, string[]> | null = null; // read from Anki by the settings tab
+  syncing = false; // a sync is under way (from the first read of Anki to the result)
 
   async onload() {
     await this.loadSettings();
@@ -35,6 +37,8 @@ export default class FlashcardBankPlugin extends Plugin {
         this.store.linksMayHaveChanged();
       }));
       this.registerEvent(this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
+        // Keep synced cards paired with their Anki notes when a note or folder moves.
+        if (renameInMap(this.settings.ankiMap, oldPath, file.path)) void this.saveSettings();
         this.store.removePath(oldPath);
         if (file instanceof TFile) void this.store.updateFile(file);
         this.store.linksMayHaveChanged();
@@ -63,9 +67,41 @@ export default class FlashcardBankPlugin extends Plugin {
     }
   }
 
+  /** Append lines to error.log in the plugin folder (never throws). */
+  async appendLog(where: string, lines: string[]): Promise<void> {
+    const text = `[${new Date().toISOString()}] ${where}:\n` + lines.map((l) => "  " + l).join("\n") + "\n";
+    try {
+      const dir = this.manifest.dir || this.app.vault.configDir + "/plugins/" + this.manifest.id;
+      await this.app.vault.adapter.append(dir + "/error.log", text);
+    } catch {
+      /* logging must never throw */
+    }
+  }
+
+  /** Sync with Anki, one sync at a time. */
   async syncAnki(): Promise<void> {
-    await syncWithAnki(this);
-    this.refreshViews();
+    if (this.syncing) {
+      new Notice("A sync with Anki is already running.");
+      return;
+    }
+    this.setSyncing(true);
+    try {
+      const wrote = await syncWithAnki(this);
+      // The register changed: let the bank redraw its Anki status labels.
+      if (wrote) this.store.linksMayHaveChanged();
+    } catch (e) {
+      void this.logError("sync", e);
+      new Notice("The sync with Anki failed: " + (e as Error).message, 8000);
+    } finally {
+      this.setSyncing(false);
+    }
+  }
+
+  private setSyncing(on: boolean): void {
+    this.syncing = on;
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      if (leaf.view instanceof BankView) leaf.view.setSyncBusy(on);
+    }
   }
 
   /** Re-render open bank tabs after a settings change. */

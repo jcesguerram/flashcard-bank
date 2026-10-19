@@ -1,5 +1,5 @@
 // Tests for src/sync.ts against an in-memory fake AnkiConnect.
-import { planSync, readAnki, runSync, hashContent, toAnkiText, AnkiMap, SyncCard, planIsEmpty } from "../src/sync";
+import { planSync, readAnki, runSync, hashContent, toAnkiText, fromAnkiText, renameInMap, AnkiMap, SyncCard, planIsEmpty } from "../src/sync";
 import { FakeAnki } from "./fakeanki";
 declare const process: any;
 
@@ -109,6 +109,70 @@ const knownOf = (cards: SyncCard[], extra: [string, string][] = []) => new Map<s
   try { await readAnki(bad, { k: { noteId: 1, id: "x", deck: "d", hash: "h" } }, TAG); } catch { threw = true; }
   ok(threw, "Anki closed → readAnki throws");
   ok(hashContent("a", "b") !== hashContent("ab", ""), "hash separates front/back");
+
+
+  // 13. renaming or moving a note keeps its cards paired (and doesn't plan delete + create)
+  {
+    const a = new FakeAnki();
+    const m: AnkiMap = {};
+    let cs = [card("Notas/Riesgos.md", "r1", "¿R1?", "A", "D"), card("Notas/Riesgos.md", "r2", "¿R2?", "B", "D"), card("Otra.md", "o1", "¿O1?", "C", "D")];
+    await sync(a, cs, knownOf(cs), m);
+    const before = m["Notas/Riesgos.md#^r2"].noteId;
+    // without the rename handler: renamed note + an edit → delete and re-create (the history loss being fixed)
+    const edited = [card("Notas/Riesgos 2.md", "r1", "¿R1?", "A", "D"), card("Notas/Riesgos 2.md", "r2", "¿R2?", "B editada", "D"), cs[2]];
+    const copy: AnkiMap = JSON.parse(JSON.stringify(m));
+    const st0 = await readAnki(a, copy, TAG);
+    const p0 = planSync(edited, knownOf(edited), copy, st0.notes, st0.tagged);
+    eq([p0.create.length, p0.remove.length], [1, 1], "unhandled rename + edit would delete and re-create");
+    // with it
+    eq(renameInMap(m, "Notas/Riesgos.md", "Notas/Riesgos 2.md"), 2, "rename moves both entries of the note");
+    ok(!!m["Otra.md#^o1"], "other notes untouched by the rename");
+    const { plan: p1, res: r1 } = await sync(a, edited, knownOf(edited), m);
+    eq([p1.create.length, p1.remove.length, p1.update.length, r1.errors.length], [0, 0, 1, 0], "after rename: just an update");
+    ok(m["Notas/Riesgos 2.md#^r2"].noteId === before && a.notes.get(before)!.fields.Reverso === "B editada", "same Anki note, history kept");
+    // folder rename moves every key under it, and never a prefix look-alike
+    m["Notas2/X.md#^x1"] = { noteId: 999, id: "x1", deck: "D", hash: "h" };
+    eq(renameInMap(m, "Notas", "Archivo/Notas"), 2, "folder rename moves the keys inside it");
+    ok(!!m["Archivo/Notas/Riesgos 2.md#^r1"] && !!m["Notas2/X.md#^x1"], "folder rename: inside moved, look-alike prefix kept");
+    // never overwrite an existing pairing
+    m["B.md#^r9"] = { noteId: 1, id: "r9", deck: "D", hash: "h" };
+    m["A.md#^r9"] = { noteId: 2, id: "r9", deck: "D", hash: "h" };
+    eq(renameInMap(m, "A.md", "B.md"), 0, "rename never overwrites an existing entry");
+    ok(m["B.md#^r9"].noteId === 1 && m["A.md#^r9"].noteId === 2, "both entries kept");
+  }
+
+  // 14. delete rows name the card even when it's gone from the vault (question read from Anki)
+  {
+    const a = new FakeAnki();
+    const m: AnkiMap = {};
+    const cs = [card("R.md", "d1", "¿Qué es el <capital> & riesgo?", "A", "D")];
+    await sync(a, cs, knownOf(cs), m);
+    const st = await readAnki(a, m, TAG, "Anverso");
+    const p = planSync([], new Map(), m, st.notes, st.tagged);
+    eq(p.remove.map((r) => [r.q, r.reason]), [["¿Qué es el <capital> & riesgo?", "deleted"]], "deleted card labelled with its question from Anki");
+    eq(fromAnkiText("a&nbsp;<b>b</b><br>c &amp; d"), "a b c & d", "Anki HTML to plain label");
+  }
+
+  // 15. progress is reported step by step
+  {
+    const a = new FakeAnki();
+    const m: AnkiMap = {};
+    const cs = [card("R.md", "p1", "Q1", "A", "D"), card("R.md", "p2", "Q2", "A", "D"), card("R.md", "p3", "Q3", "A", "D")];
+    const st = await readAnki(a, m, TAG);
+    const steps: string[] = [];
+    await runSync(a, planSync(cs, knownOf(cs), m, st.notes, st.tagged), m, st.notes, OPT, (d, t) => steps.push(d + "/" + t));
+    eq(steps, ["1/3", "2/3", "3/3"], "progress callback");
+  }
+
+  // 16. a second sync planned from a fresh read after the first finished creates nothing
+  {
+    const a = new FakeAnki();
+    const m: AnkiMap = {};
+    const cs = Array.from({ length: 5 }, (_, i) => card("R.md", "c" + i, "Q" + i, "A", "D"));
+    await sync(a, cs, knownOf(cs), m);
+    const { plan: again } = await sync(a, cs, knownOf(cs), m);
+    eq([again.create.length, a.notes.size], [0, 5], "re-reading before applying never duplicates");
+  }
 
   console.log(`${pass} passed, ${fail} failed`);
   if (fail) process.exit(1);

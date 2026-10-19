@@ -137,8 +137,8 @@ The editor has the question and answer at the top, and three sections below that
 
 - **Question / Answer**: single line each. Enter doesn't add line breaks (Ctrl/Cmd+Enter saves).
 - **Source and deck**
-  - **Source**: free text, or type part of a file name and pick it to insert `[[file]]`. Separate several sources with commas.
-  - **Deck**: the Anki deck. Click the field to pick a deck already in use, or type a new one. Only cards with a deck are synced.
+  - **Source**: free text, or type part of a file name and pick it (↓ and Enter, or a click) to insert `[[file]]`. Tab keeps what you typed. Separate several sources with commas.
+  - **Deck**: the Anki deck. Click the field to see the decks already in use; pick one with ↓/↑ and Enter (or a click), or type a new one. Tab keeps what you typed, so a card never gets a deck you didn't choose. Only cards with a deck are synced.
 - **Connections**
   - **Concepts**: the concepts linked in the question and answer, updated as you type. Click one to open its concept page; the note icon opens its note (or creates it, if it doesn't exist yet).
   - **Related**: the links in this card's own *Related* field (× removes one). Type in the search box to add a link. Links written on other cards to this one aren't listed here; they show in the concept map.
@@ -212,7 +212,11 @@ Click **Sync with Anki** (the circular arrows at the top of the bank), or run **
 - **Will be re-created**: synced cards whose Anki note was deleted by hand.
 - **Will be deleted from Anki**: cards whose deck was cleared, or that were deleted from Obsidian. This also deletes their review history in Anki, so the button then reads **Sync and delete N**. Nothing outside this list is ever deleted.
 
+The **created** and **deleted** lists show every card, with its note; cards that are no longer in Obsidian are named by their question as it is in Anki.
+
 Cancel and nothing happens. If everything is already in sync, you just get a notice.
+
+When you confirm, the plugin reads Anki and your notes again before changing anything (deletions stay limited to the ones you confirmed). A notice shows the progress, and the sync button shows it's busy: only one sync runs at a time. If some cards fail, a window lists them with the reason (with a **Copy** button), and the details also go to `error.log`.
 
 ### What goes into Anki
 
@@ -226,6 +230,8 @@ The plugin only updates or deletes an Anki note when **both** of these are true:
 
 - It's in the plugin's own register of notes it created. That register is stored in the plugin's `data.json` as `ankiMap`: card `note.md#^id` → Anki note id.
 - It still carries the plugin's tag in Anki.
+
+The register follows your notes: renaming or moving a note, or a folder, updates it, so the cards stay paired with their Anki notes and keep their review history.
 
 Everything else is never edited or deleted. That includes notes you made by hand, and notes from which you removed the tag; the latter are listed as *left untouched*. Notes that carry the tag but aren't in the register (for example after reinstalling the plugin) are only reported.
 

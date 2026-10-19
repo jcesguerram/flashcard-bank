@@ -38,6 +38,10 @@
 .bt-crumbs-here { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bt-head-tools { display: flex; gap: 2px; }
 .bt-map-btn.is-active { color: var(--text-accent); background: var(--bt-tint); }
+.bt-anki-btn.is-busy { color: var(--text-accent); cursor: default; }
+.bt-anki-btn.is-busy svg { animation: bt-spin 1.2s linear infinite; }
+@keyframes bt-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bt-anki-btn.is-busy svg { animation: none; opacity: 0.5; } }
 
 .bt-bar {
   display: flex;
@@ -385,6 +389,8 @@ textarea.bt-input { resize: vertical; font-family: inherit; }
 .bt-sync-danger .bt-sync-title { color: var(--color-red); }
 .bt-sync-section.is-muted { opacity: 0.75; }
 .bt-sync-more { font-style: italic; }
+.bt-sync-section.is-full ul { max-height: 220px; overflow-y: auto; }
+.bt-sync-where { color: var(--text-muted); }
 .bt-sync-note { font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .bt-sync-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .bt-fatal { padding: 16px; color: var(--text-error); }

@@ -34,6 +34,7 @@ export interface NoteState {
   tagged: boolean;
   deck: string | null;
   cards: number[];
+  front?: string; // the question as it is in Anki (plain text), to label notes the vault no longer has
 }
 
 export interface Plan {
@@ -62,6 +63,44 @@ export function escapeHtml(s: string): string {
 export function toAnkiText(s: string): string {
   const plain = s.replace(/\[\[([^\]|]+?)(?:\|([^\]]*))?\]\]/g, (_m, t: string, al?: string) => al || (t.split("#")[0] ?? ""));
   return escapeHtml(plain.trim());
+}
+
+/** Anki field HTML back to plain text (for labels only). */
+export function fromAnkiText(s: string): string {
+  return s
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Move the register's entries when a note or a folder is renamed or moved, so
+ * its cards stay paired with their Anki notes. Keys are "path#^id"; a folder
+ * rename moves every key under it. Returns how many entries moved.
+ */
+export function renameInMap(map: AnkiMap, oldPath: string, newPath: string): number {
+  let n = 0;
+  for (const key of Object.keys(map)) {
+    const hash = key.indexOf("#^");
+    if (hash < 0) continue;
+    const path = key.slice(0, hash);
+    let next: string | null = null;
+    if (path === oldPath) next = newPath;
+    else if (path.startsWith(oldPath + "/")) next = newPath + path.slice(oldPath.length);
+    if (next === null) continue;
+    const to = next + key.slice(hash);
+    if (map[to]) continue; // never overwrite an existing pairing
+    map[to] = map[key]!;
+    delete map[key];
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -122,7 +161,7 @@ export function planSync(
   for (const [key, entry] of Object.entries(map)) {
     if (wanted.has(key) || claimed.has(key)) continue;
     const st = notes.get(entry.noteId);
-    const q = known.get(key) || "(card deleted in Obsidian)";
+    const q = known.get(key) || st?.front || "(card deleted in Obsidian)";
     if (!st || !st.exists) plan.forget.push(key);
     else if (!st.tagged) plan.protectedNotes.push({ key, entry, q });
     else plan.remove.push({ key, entry, q, reason: known.has(key) ? "no-deck" : "deleted" });
@@ -138,17 +177,19 @@ export function planIsEmpty(p: Plan): boolean {
 }
 
 /** Read from Anki what planSync needs. */
-export async function readAnki(api: AnkiApi, map: AnkiMap, tag: string): Promise<{ notes: Map<number, NoteState>; tagged: number[] }> {
+export async function readAnki(api: AnkiApi, map: AnkiMap, tag: string, frontField?: string): Promise<{ notes: Map<number, NoteState>; tagged: number[] }> {
   const ids = Array.from(new Set(Object.values(map).map((e) => e.noteId)));
   const notes = new Map<number, NoteState>();
   if (ids.length) {
     // AnkiConnect answers one entry per id, in order; an empty object for a note that no longer exists.
-    const info = await api.call<({ noteId?: number; tags?: string[]; cards?: number[] } | null)[]>("notesInfo", { notes: ids });
+    const info = await api.call<({ noteId?: number; tags?: string[]; cards?: number[]; fields?: Record<string, { value?: string }> } | null)[]>("notesInfo", { notes: ids });
     const firstCards: number[] = [];
     ids.forEach((id, i) => {
       const n = info[i];
       const exists = !!n && typeof n.noteId === "number";
       const st: NoteState = { exists, tagged: exists && (n.tags || []).includes(tag), deck: null, cards: exists ? n.cards || [] : [] };
+      const fv = exists && frontField ? n.fields?.[frontField]?.value : undefined;
+      if (typeof fv === "string" && fv.trim()) st.front = fromAnkiText(fv);
       notes.set(id, st);
       if (st.cards[0] !== undefined) firstCards.push(st.cards[0]);
     });
@@ -181,8 +222,14 @@ export interface RunResult {
  * Apply a plan. `map` is updated in place as each step succeeds, so a failure
  * halfway leaves it consistent with what actually happened in Anki.
  */
-export async function runSync(api: AnkiApi, plan: Plan, map: AnkiMap, notes: Map<number, NoteState>, opt: RunOptions): Promise<RunResult> {
+export async function runSync(
+  api: AnkiApi, plan: Plan, map: AnkiMap, notes: Map<number, NoteState>, opt: RunOptions,
+  onStep?: (done: number, total: number) => void
+): Promise<RunResult> {
   const res: RunResult = { created: 0, updated: 0, removed: 0, errors: [] };
+  const total = plan.create.length + plan.recreate.length + plan.update.length + plan.remove.length;
+  let done = 0;
+  const step = (n = 1) => { done += n; onStep?.(done, total); };
   const decks = new Set<string>();
   plan.create.concat(plan.recreate).forEach((c) => decks.add(c.deck));
   plan.update.filter((u) => u.deck).forEach((u) => decks.add(u.card.deck));
@@ -210,6 +257,7 @@ export async function runSync(api: AnkiApi, plan: Plan, map: AnkiMap, notes: Map
     } catch (e) {
       res.errors.push(`“${c.q}”: ${(e as Error).message}`);
     }
+    step();
   }
 
   for (const u of plan.update) {
@@ -227,6 +275,7 @@ export async function runSync(api: AnkiApi, plan: Plan, map: AnkiMap, notes: Map
     } catch (e) {
       res.errors.push(`“${u.card.q}”: ${(e as Error).message}`);
     }
+    step();
   }
 
   if (plan.remove.length) {
@@ -237,6 +286,7 @@ export async function runSync(api: AnkiApi, plan: Plan, map: AnkiMap, notes: Map
     } catch (e) {
       res.errors.push("Couldn't delete notes in Anki: " + (e as Error).message);
     }
+    step(plan.remove.length);
   }
   plan.forget.forEach((k) => delete map[k]);
   return res;

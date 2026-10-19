@@ -69,6 +69,7 @@ export class BankView extends ItemView {
   private noteSel!: HTMLSelectElement;
   private bodyEl!: HTMLElement;
   private mapBtn!: HTMLElement;
+  private ankiBtn!: HTMLButtonElement;
   private segBtns: HTMLElement[] = [];
 
   constructor(leaf: WorkspaceLeaf, private plugin: FlashcardBankPlugin) {
@@ -113,9 +114,10 @@ export class BankView extends ItemView {
     this.mapBtn = tools.createEl("button", { cls: "clickable-icon bt-map-btn", attr: { "aria-label": "Concept map" } });
     setIcon(this.mapBtn, "network");
     this.mapBtn.addEventListener("click", () => this.toggleMap());
-    const ab = tools.createEl("button", { cls: "clickable-icon bt-anki-btn", attr: { "aria-label": "Sync with Anki" } });
-    setIcon(ab, "refresh-cw");
-    ab.addEventListener("click", () => { void this.plugin.syncAnki(); });
+    this.ankiBtn = tools.createEl("button", { cls: "clickable-icon bt-anki-btn", attr: { "aria-label": "Sync with Anki" } });
+    setIcon(this.ankiBtn, "refresh-cw");
+    this.ankiBtn.addEventListener("click", () => { void this.plugin.syncAnki(); });
+    this.setSyncBusy(this.plugin.syncing);
 
     // Search, filters, new card.
     const bar = root.createDiv({ cls: "bt-bar" });
@@ -191,6 +193,14 @@ export class BankView extends ItemView {
     });
     this.syncToolbar();
     this.renderAll();
+  }
+
+  /** Show the Anki button as busy (and ignore clicks) while a sync runs. */
+  setSyncBusy(on: boolean): void {
+    if (!this.ankiBtn) return;
+    this.ankiBtn.toggleClass("is-busy", on);
+    this.ankiBtn.disabled = on;
+    this.ankiBtn.setAttr("aria-label", on ? "Syncing with Anki…" : "Sync with Anki");
   }
 
   async onClose() {
@@ -820,13 +830,13 @@ export class BankView extends ItemView {
     deckIn.addClass("bt-deck");
     setIcon(deckIn.parentElement!.createSpan({ cls: "bt-select-icon" }), "chevrons-up-down");
     sd.body.createDiv({ cls: "bt-muted bt-hint", text: "Only cards with a deck are synced with Anki." });
-    new InlineSuggest(deckIn, (q) => this.valueItems(q, (x) => this.store.deckOf(x)), (it) => { deckIn.value = it.value; sync(); }, true);
+    new InlineSuggest(deckIn, (q) => this.valueItems(q, (x) => this.store.deckOf(x)), (it) => { deckIn.value = it.value; sync(); }, true, true);
     new InlineSuggest(sourceIn, (q) => this.fileItems(q), (it) => {
       const v = sourceIn.value;
       const k = v.lastIndexOf(",");
       sourceIn.value = (k >= 0 ? v.slice(0, k + 1) + " " : "") + it.value;
       sync();
-    });
+    }, false, true);
 
     // 3. Concepts and related cards
     const cn = this.section(el, "connections", "Connections");

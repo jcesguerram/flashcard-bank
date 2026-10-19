@@ -1,8 +1,10 @@
 // The "Sync with Anki" flow: read Anki, show what will happen, apply on confirm.
+// Only one sync runs at a time (see FlashcardBankPlugin.syncAnki); a notice shows
+// what it's doing until it finishes.
 
 import { App, Modal, Notice } from "obsidian";
 import { Plan, planIsEmpty, planSync, readAnki, runSync, SyncCard } from "./sync";
-import { cardKey } from "./store";
+import { cardKey, pathOfKey } from "./store";
 import { plainValue, type Card } from "./card";
 import type FlashcardBankPlugin from "./main";
 
@@ -16,30 +18,56 @@ function gather(plugin: FlashcardBankPlugin) {
   return { cards, known, noId };
 }
 
-export async function syncWithAnki(plugin: FlashcardBankPlugin): Promise<void> {
+/** A notice that stays up while the sync works, and can change its text. */
+class Progress {
+  private notice: Notice | null = null;
+
+  show(text: string): void {
+    if (this.notice) this.notice.setMessage(text);
+    else this.notice = new Notice(text, 0);
+  }
+
+  hide(): void {
+    this.notice?.hide();
+    this.notice = null;
+  }
+}
+
+/**
+ * Run one sync. Returns true when something may have been written (to Anki, to
+ * the plugin's register, or block ids to notes), so the caller knows whether
+ * the bank needs refreshing.
+ */
+export async function syncWithAnki(plugin: FlashcardBankPlugin): Promise<boolean> {
   const s = plugin.settings;
   const api = plugin.anki;
+  const progress = new Progress();
   let { cards, known, noId } = gather(plugin);
 
   let state;
   try {
+    progress.show("Anki: reading your collection…");
     const models: string[] = await api.call("modelNames");
     if (!models.includes(s.anki.model)) {
+      progress.hide();
       new Notice("The note type “" + s.anki.model + "” doesn't exist in Anki. Pick one in the plugin settings.", 8000);
-      return;
+      return false;
     }
     const fields: string[] = await api.call("modelFieldNames", { modelName: s.anki.model });
     for (const f of [s.anki.frontField, s.anki.backField]) {
       if (!fields.includes(f)) {
+        progress.hide();
         new Notice("The note type “" + s.anki.model + "” has no field “" + f + "”. Check the plugin settings.", 8000);
-        return;
+        return false;
       }
     }
-    state = await readAnki(api, s.ankiMap, s.anki.tag);
+    state = await readAnki(api, s.ankiMap, s.anki.tag, s.anki.frontField);
   } catch (e) {
+    progress.hide();
     new Notice((e as Error).message, 8000);
-    return;
+    return false;
   }
+  progress.hide();
 
   const plan = planSync(cards, known, s.ankiMap, state.notes, state.tagged);
   if (planIsEmpty(plan) && !noId.length) {
@@ -48,35 +76,57 @@ export async function syncWithAnki(plugin: FlashcardBankPlugin): Promise<void> {
       plan.orphans.length ? plan.orphans.length + " with the tag that the plugin doesn't recognize (left untouched)" : "",
     ].filter(Boolean);
     new Notice("Anki is up to date." + (extra.length ? " Notes: " + extra.join("; ") + "." : ""));
-    return;
+    return false;
   }
 
   const go = await new SyncModal(plugin.app, plan, noId).ask();
-  if (!go) return;
+  if (!go) return false;
 
   try {
     if (noId.length) {
+      progress.show("Anki: giving ids to " + plural(noId.length, "card") + "…");
       await plugin.store.assignIds(noId);
-      ({ cards, known } = gather(plugin));
-      state = await readAnki(api, s.ankiMap, s.anki.tag);
     }
+    // Plan again from a fresh read of the vault and of Anki: the summary may
+    // have stayed open for a while, and Anki or the notes may have changed.
+    progress.show("Anki: checking your collection again…");
+    ({ cards, known } = gather(plugin));
+    state = await readAnki(api, s.ankiMap, s.anki.tag, s.anki.frontField);
     const final = planSync(cards, known, s.ankiMap, state.notes, state.tagged);
     // Never delete anything that wasn't in the confirmed summary.
     const confirmed = new Set(plan.remove.map((r) => r.key));
     final.remove = final.remove.filter((r) => confirmed.has(r.key));
-    const res = await runSync(api, final, s.ankiMap, state.notes, s.anki);
+    const res = await runSync(api, final, s.ankiMap, state.notes, s.anki, (done, total) => {
+      progress.show("Anki: syncing… " + done + " of " + total);
+    });
     await plugin.saveSettings();
+    progress.hide();
     const parts = [
       res.created ? res.created + " created" : "",
       res.updated ? res.updated + " updated" : "",
       res.removed ? res.removed + " deleted" : "",
     ].filter(Boolean);
-    new Notice("Anki: " + (parts.join(", ") || "no changes") + (res.errors.length ? ". " + res.errors.length + " failed (see console)." : "."), 8000);
-    if (res.errors.length) console.warn("[flashcard-bank] sync errors:\n" + res.errors.join("\n"));
+    if (res.errors.length) {
+      await plugin.appendLog("Anki sync: " + res.errors.length + " failed", res.errors);
+      new SyncErrorsModal(plugin.app, (parts.join(", ") || "Nothing") + " in Anki.", res.errors).open();
+    } else {
+      new Notice("Anki: " + (parts.join(", ") || "no changes") + ".", 8000);
+    }
   } catch (e) {
     await plugin.saveSettings();
-    new Notice("The sync was interrupted: " + (e as Error).message, 8000);
+    progress.hide();
+    await plugin.appendLog("Anki sync interrupted", [(e as Error).message]);
+    new SyncErrorsModal(plugin.app, "The sync was interrupted. What finished before that is kept.", [(e as Error).message]).open();
   }
+  return true;
+}
+
+function plural(n: number, word: string): string {
+  return n + " " + word + (n === 1 ? "" : "s");
+}
+
+function noteOf(key: string): string {
+  return pathOfKey(key).split("/").pop()!.replace(/\.md$/, "");
 }
 
 class SyncModal extends Modal {
@@ -100,15 +150,24 @@ class SyncModal extends Modal {
     el.addClass("bt-sync-modal");
     el.createEl("h3", { text: "Sync with Anki" });
     const p = this.plan;
-    const create = p.create.map((c) => c.q).concat(this.noId.map((c) => plainValue(c.q) + " (will get an id)"));
-    this.section(el, "Will be created in Anki", create);
-    this.section(el, "Will be updated", p.update.map((u) => u.card.q + " — " + [u.fields ? "content" : "", u.deck ? "deck → " + u.card.deck : "", u.fromKey && !u.fields && !u.deck ? "moved to another note" : ""].filter(Boolean).join(", ")));
-    this.section(el, "Will be re-created (their Anki note no longer exists)", p.recreate.map((c) => c.q));
+    // Created and deleted cards are listed in full: they're what opts a card in, or removes review history.
+    const create = p.create.map((c) => ({ text: c.q, note: noteOf(c.key) }))
+      .concat(this.noId.map((c) => ({ text: plainValue(c.q) + " (will get an id)", note: noteOf(c.path) })));
+    this.section(el, "Will be created in Anki", create, "", true);
+    this.section(el, "Will be updated", p.update.map((u) => ({
+      text: u.card.q + " — " + [u.fields ? "content" : "", u.deck ? "deck → " + u.card.deck : "", u.fromKey && !u.fields && !u.deck ? "moved to another note" : ""].filter(Boolean).join(", "),
+      note: noteOf(u.card.key),
+    })));
+    this.section(el, "Will be re-created (their Anki note no longer exists)", p.recreate.map((c) => ({ text: c.q, note: noteOf(c.key) })));
     if (p.remove.length) {
-      const box = this.section(el, "Will be deleted from Anki, with their review history", p.remove.map((r) => r.q + (r.reason === "no-deck" ? " — its Deck was cleared" : " — no longer in Obsidian")), "is-danger");
+      const items = p.remove.map((r) => ({
+        text: r.q + (r.reason === "no-deck" ? " — its Deck was cleared" : " — no longer in Obsidian"),
+        note: (r.reason === "no-deck" ? "" : "was in ") + noteOf(r.key),
+      }));
+      const box = this.section(el, "Will be deleted from Anki, with their review history", items, "is-danger", true);
       box?.addClass("bt-sync-danger");
     }
-    if (p.protectedNotes.length) this.section(el, "Left untouched: they no longer carry the plugin's tag in Anki", p.protectedNotes.map((x) => x.q), "is-muted");
+    if (p.protectedNotes.length) this.section(el, "Left untouched: they no longer carry the plugin's tag in Anki", p.protectedNotes.map((x) => ({ text: x.q, note: noteOf(x.key) })), "is-muted");
     if (p.orphans.length) {
       el.createEl("p", { cls: "bt-sync-note", text: p.orphans.length + " note(s) in Anki carry the plugin's tag but aren't in its register. They're left untouched." });
     }
@@ -122,13 +181,18 @@ class SyncModal extends Modal {
     ok.addEventListener("click", () => this.finish(true));
   }
 
-  private section(el: HTMLElement, title: string, items: string[], cls = ""): HTMLElement | null {
+  /** A titled list. `full` lists every item (in a scrolling box); otherwise the first 12. */
+  private section(el: HTMLElement, title: string, items: { text: string; note: string }[], cls = "", full = false): HTMLElement | null {
     if (!items.length) return null;
-    const box = el.createDiv({ cls: "bt-sync-section " + cls });
+    const box = el.createDiv({ cls: "bt-sync-section " + cls + (full ? " is-full" : "") });
     box.createDiv({ cls: "bt-sync-title", text: title + " · " + items.length });
     const ul = box.createEl("ul");
-    items.slice(0, 12).forEach((t) => ul.createEl("li", { text: t }));
-    if (items.length > 12) ul.createEl("li", { cls: "bt-sync-more", text: "and " + (items.length - 12) + " more" });
+    const shown = full ? items : items.slice(0, 12);
+    for (const it of shown) {
+      const li = ul.createEl("li", { text: it.text });
+      if (it.note) li.createSpan({ cls: "bt-sync-where", text: " · " + it.note });
+    }
+    if (!full && items.length > 12) ul.createEl("li", { cls: "bt-sync-more", text: "and " + (items.length - 12) + " more" });
     return box;
   }
 
@@ -144,6 +208,36 @@ class SyncModal extends Modal {
       this.done = true;
       this.resolve(false);
     }
+    this.contentEl.empty();
+  }
+}
+
+/** What went wrong in a sync, card by card, with a way to copy it. */
+class SyncErrorsModal extends Modal {
+  constructor(app: App, private summary: string, private errors: string[]) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const el = this.contentEl;
+    el.empty();
+    el.addClass("bt-sync-modal");
+    el.createEl("h3", { text: "Anki sync: some cards failed" });
+    el.createEl("p", { cls: "bt-sync-note", text: this.summary + " These failed and are unchanged in Anki; the next sync tries them again. The details are also in error.log in the plugin folder." });
+    const box = el.createDiv({ cls: "bt-sync-section is-full is-danger bt-sync-danger" });
+    box.createDiv({ cls: "bt-sync-title", text: "Failed · " + this.errors.length });
+    const ul = box.createEl("ul");
+    for (const e of this.errors) ul.createEl("li", { text: e });
+    const btns = el.createDiv({ cls: "bt-sync-buttons" });
+    const copy = btns.createEl("button", { text: "Copy" });
+    copy.addEventListener("click", () => {
+      void navigator.clipboard.writeText(this.errors.join("\n")).then(() => copy.setText("Copied"));
+    });
+    const ok = btns.createEl("button", { cls: "mod-cta", text: "Close" });
+    ok.addEventListener("click", () => this.close());
+  }
+
+  onClose(): void {
     this.contentEl.empty();
   }
 }
