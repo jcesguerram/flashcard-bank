@@ -158,8 +158,22 @@ export function planSync(
     else plan.unchanged++;
   }
 
+  // Anki notes still used by a card that stays: a stale key pointing at one of
+  // them (e.g. a note renamed while a sync was running) is dropped from the
+  // register, never deleted in Anki.
+  const inUse = new Set<number>();
+  for (const c of cards) {
+    const fromKey = movedFrom.get(c.key);
+    const entry = map[c.key] || (fromKey ? map[fromKey] : undefined);
+    if (entry) inUse.add(entry.noteId);
+  }
+
   for (const [key, entry] of Object.entries(map)) {
     if (wanted.has(key) || claimed.has(key)) continue;
+    if (inUse.has(entry.noteId)) {
+      plan.forget.push(key);
+      continue;
+    }
     const st = notes.get(entry.noteId);
     const q = known.get(key) || st?.front || "(card deleted in Obsidian)";
     if (!st || !st.exists) plan.forget.push(key);

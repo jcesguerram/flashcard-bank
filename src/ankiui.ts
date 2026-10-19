@@ -108,15 +108,30 @@ export async function syncWithAnki(plugin: FlashcardBankPlugin): Promise<boolean
     ].filter(Boolean);
     if (res.errors.length) {
       await plugin.appendLog("Anki sync: " + res.errors.length + " failed", res.errors);
-      new SyncErrorsModal(plugin.app, (parts.join(", ") || "Nothing") + " in Anki.", res.errors).open();
+      new SyncErrorsModal(
+        plugin.app,
+        "Anki sync: some cards failed",
+        "Done in Anki: " + (parts.join(", ") || "nothing") + ". The cards below failed; the next sync tries them again. The details are also in error.log in the plugin folder.",
+        res.errors
+      ).open();
     } else {
       new Notice("Anki: " + (parts.join(", ") || "no changes") + ".", 8000);
     }
   } catch (e) {
-    await plugin.saveSettings();
-    progress.hide();
+    try {
+      await plugin.saveSettings(); // keep what finished before the interruption
+    } catch (e2) {
+      await plugin.appendLog("Anki sync: couldn't save the register", [(e2 as Error).message]);
+    }
     await plugin.appendLog("Anki sync interrupted", [(e as Error).message]);
-    new SyncErrorsModal(plugin.app, "The sync was interrupted. What finished before that is kept.", [(e as Error).message]).open();
+    new SyncErrorsModal(
+      plugin.app,
+      "Anki sync interrupted",
+      "The sync stopped before it finished. What was done in Anki before that is kept and remembered; run the sync again to finish. The details are also in error.log in the plugin folder.",
+      [(e as Error).message]
+    ).open();
+  } finally {
+    progress.hide();
   }
   return true;
 }
@@ -214,7 +229,7 @@ class SyncModal extends Modal {
 
 /** What went wrong in a sync, card by card, with a way to copy it. */
 class SyncErrorsModal extends Modal {
-  constructor(app: App, private summary: string, private errors: string[]) {
+  constructor(app: App, private title: string, private summary: string, private errors: string[]) {
     super(app);
   }
 
@@ -222,10 +237,10 @@ class SyncErrorsModal extends Modal {
     const el = this.contentEl;
     el.empty();
     el.addClass("bt-sync-modal");
-    el.createEl("h3", { text: "Anki sync: some cards failed" });
-    el.createEl("p", { cls: "bt-sync-note", text: this.summary + " These failed and are unchanged in Anki; the next sync tries them again. The details are also in error.log in the plugin folder." });
+    el.createEl("h3", { text: this.title });
+    el.createEl("p", { cls: "bt-sync-note", text: this.summary });
     const box = el.createDiv({ cls: "bt-sync-section is-full is-danger bt-sync-danger" });
-    box.createDiv({ cls: "bt-sync-title", text: "Failed · " + this.errors.length });
+    box.createDiv({ cls: "bt-sync-title", text: (this.errors.length === 1 ? "Error" : "Errors") + " · " + this.errors.length });
     const ul = box.createEl("ul");
     for (const e of this.errors) ul.createEl("li", { text: e });
     const btns = el.createDiv({ cls: "bt-sync-buttons" });

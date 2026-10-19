@@ -174,6 +174,25 @@ const knownOf = (cards: SyncCard[], extra: [string, string][] = []) => new Map<s
     eq([again.create.length, a.notes.size], [0, 5], "re-reading before applying never duplicates");
   }
 
+  // 17. a note renamed while a sync runs: the stale key is forgotten, never deleted in Anki
+  {
+    const a = new FakeAnki();
+    const m: AnkiMap = {};
+    let cs = [card("A.md", "x1", "Q", "A", "D")];
+    await sync(a, cs, knownOf(cs), m);
+    const id = m["A.md#^x1"].noteId;
+    // plan an update from the old path, then the rename handler runs before the update is written
+    cs = [card("A.md", "x1", "Q", "A editada", "D")];
+    const st = await readAnki(a, m, TAG);
+    const p = planSync(cs, knownOf(cs), m, st.notes, st.tagged);
+    renameInMap(m, "A.md", "B.md");
+    await runSync(a, p, m, st.notes, OPT); // writes map["A.md#^x1"] again: two keys, one note
+    ok(m["A.md#^x1"]?.noteId === id && m["B.md#^x1"]?.noteId === id, "race leaves two keys for one note");
+    const after = [card("B.md", "x1", "Q", "A editada", "D")];
+    const { plan: next } = await sync(a, after, knownOf(after), m);
+    eq([next.remove.length, next.forget, a.notes.has(id), Object.keys(m)], [0, ["A.md#^x1"], true, ["B.md#^x1"]], "stale key forgotten, Anki note kept");
+  }
+
   console.log(`${pass} passed, ${fail} failed`);
   if (fail) process.exit(1);
 })();
