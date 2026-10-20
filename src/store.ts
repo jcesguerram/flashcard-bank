@@ -54,9 +54,11 @@ export interface SectionState {
   connections: boolean;
   advanced: boolean;
   via: boolean;
+  decks: boolean; // left panel sections
+  concepts: boolean;
 }
 
-export const DEFAULT_OPEN: SectionState = { sourceDeck: true, connections: true, advanced: false, via: false };
+export const DEFAULT_OPEN: SectionState = { sourceDeck: true, connections: true, advanced: false, via: false, decks: true, concepts: true };
 
 export const DEFAULT_FIELDS: FieldNames = { source: "Source", related: "Related", deck: "Deck" };
 

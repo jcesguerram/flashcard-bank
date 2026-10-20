@@ -1,4 +1,4 @@
-// The "Flashcard Bank" tab: concepts column, card list, editor, concept map and concept pages.
+// The "Flashcard Bank" tab: decks and concepts panel, card list, editor, concept map and concept pages.
 
 import { ItemView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from "obsidian";
 import { Card, SectionRef, headingsOf, rewriteCard, newCardLine, plainValue, safeAlias, newId, parseLinks } from "./card";
@@ -31,6 +31,7 @@ export class BankView extends ItemView {
   // filters
   private query = "";
   private concept = ""; // concept key, NO_CONCEPT, or "" for all
+  private deck: string | null = null; // a deck (with its sub-decks), "" for cards without a deck, or null for all
   private source = "";
   private note = "";
   private filtersOpen = false;
@@ -58,6 +59,7 @@ export class BankView extends ItemView {
   // elements
   private crumbsEl!: HTMLElement;
   private conceptsEl!: HTMLElement;
+  private sideEl!: HTMLElement;
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private mapEl!: HTMLElement;
@@ -127,7 +129,10 @@ export class BankView extends ItemView {
     search.addEventListener("input", () => {
       this.query = search.value;
       if (this.pageKey) this.closePage();
-      else this.renderList();
+      else {
+        this.renderConcepts(); // the counts follow the search
+        this.renderList();
+      }
     });
     this.filterBtn = bar.createEl("button", { cls: "bt-filter-btn" });
     this.filterBtn.addEventListener("click", () => {
@@ -154,13 +159,12 @@ export class BankView extends ItemView {
       this.source = "";
       this.note = "";
       this.renderFilters();
+      this.renderConcepts();
       this.renderList();
     });
 
     this.bodyEl = root.createDiv({ cls: "bt-body" });
-    const treeCol = this.bodyEl.createDiv({ cls: "bt-tree-col" });
-    treeCol.createDiv({ cls: "bt-col-title", text: "Concepts" });
-    this.conceptsEl = treeCol.createDiv({ cls: "bt-tree" });
+    this.sideEl = this.bodyEl.createDiv({ cls: "bt-tree-col" });
     const listCol = this.bodyEl.createDiv({ cls: "bt-list-col" });
     const listHead = listCol.createDiv({ cls: "bt-list-head" });
     this.countEl = listHead.createDiv({ cls: "bt-count" });
@@ -297,7 +301,9 @@ export class BankView extends ItemView {
     el.empty();
     setIcon(el.createSpan({ cls: "bt-crumbs-icon" }), "layers");
     const home = el.createSpan({ cls: "bt-crumbs-home", text: "Flashcard bank" });
-    const here = this.pageKey ? this.conceptName(this.pageKey) : this.concept ? this.conceptName(this.concept) : "All cards";
+    const here = this.pageKey
+      ? this.conceptName(this.pageKey)
+      : [this.deck === null ? "" : this.deckName(this.deck), this.concept ? this.conceptName(this.concept) : ""].filter(Boolean).join(" · ") || "All cards";
     if (this.pageKey) {
       home.addClass("is-link");
       home.addEventListener("click", () => this.closePage());
@@ -330,7 +336,9 @@ export class BankView extends ItemView {
   private setFilter(which: "source" | "note", value: string): void {
     this[which] = value;
     if (this.pageKey) this.closePage(false);
+    (which === "source" ? this.sourceSel : this.noteSel).value = value;
     this.renderFilterButton();
+    this.renderConcepts();
     this.renderList();
   }
 
@@ -339,11 +347,10 @@ export class BankView extends ItemView {
     return f ? f.value.trim() : "";
   }
 
-  private matches(c: Card): boolean {
-    if (this.concept) {
-      const ks = this.store.conceptsOf(c).map((k) => k.key);
-      if (this.concept === NO_CONCEPT ? ks.length > 0 : !ks.includes(this.concept)) return false;
-    }
+  /** Does the card pass the filters? `skip` leaves out one of them (to count cards for its own list). */
+  private matches(c: Card, skip?: "deck" | "concept"): boolean {
+    if (this.concept && skip !== "concept" && !this.inConcept(c, this.concept)) return false;
+    if (this.deck !== null && skip !== "deck" && !this.inDeck(c, this.deck)) return false;
     if (this.source && !this.store.sourcesOf(c).includes(this.source)) return false;
     if (this.note && c.path !== this.note) return false;
     const q = this.query.trim().toLowerCase();
@@ -352,6 +359,21 @@ export class BankView extends ItemView {
       if (!hay.includes(q)) return false;
     }
     return true;
+  }
+
+  private inConcept(c: Card, key: string): boolean {
+    const ks = this.store.conceptsOf(c).map((k) => k.key);
+    return key === NO_CONCEPT ? ks.length === 0 : ks.includes(key);
+  }
+
+  /** In this deck or one of its sub-decks ("" means cards without a deck). */
+  private inDeck(c: Card, deck: string): boolean {
+    const d = this.store.deckOf(c);
+    return deck === "" ? !d : d === deck || d.startsWith(deck + "::");
+  }
+
+  private deckName(deck: string): string {
+    return deck === "" ? "No deck" : deck;
   }
 
   private sorted(cards: Card[]): Card[] {
@@ -372,37 +394,109 @@ export class BankView extends ItemView {
     return list.find((e) => e.concept.name.toLowerCase() === name)?.concept.key ?? null;
   }
 
+  /** The left panel: All cards, then the Decks and Concepts sections. Counts follow the other filters. */
   private renderConcepts(): void {
     const cards = this.store.all();
     const list = this.store.allConcepts().sort((x, y) => y.cards.length - x.cards.length || x.concept.name.localeCompare(y.concept.name));
     if (this.concept && this.concept !== NO_CONCEPT) this.concept = this.currentKey(this.concept) ?? "";
     if (this.pageKey) this.pageKey = this.currentKey(this.pageKey) ?? this.pageKey;
-    const none = cards.filter((c) => !this.store.conceptsOf(c).length).length;
-    const active = this.pageKey ?? this.concept;
-    this.conceptsEl.empty();
-    this.conceptRow("", "All cards", cards.length, "", active === "", () => this.showAll());
+    const decks = new Set<string>();
+    let noDeck = 0;
+    for (const c of cards) {
+      const d = this.store.deckOf(c);
+      if (!d) noDeck++;
+      // Each parent of a sub-deck is a deck too: Finance::Banking → Finance.
+      else d.split("::").forEach((_, i, parts) => decks.add(parts.slice(0, i + 1).join("::")));
+    }
+    if (this.deck && !decks.has(this.deck)) this.deck = null;
+    if (this.deck === "" && !noDeck) this.deck = null;
+
+    const side = this.sideEl;
+    side.empty();
+    const all = side.createDiv({ cls: "bt-tree bt-tree-all" });
+    this.conceptsEl = all;
+    this.conceptRow("", "All cards", cards.length, "", !this.pageKey && !this.concept && this.deck === null, () => this.showAll());
+
+    // Decks (only when some card has one).
+    if (decks.size) {
+      const body = this.sideSection(side, "decks", "Decks", "folder-tree");
+      const forDeck = cards.filter((c) => this.matches(c, "deck"));
+      const sortedDecks = Array.from(decks).sort((a, b) => a.localeCompare(b));
+      for (const d of sortedDecks) {
+        const depth = d.split("::").length - 1;
+        const n = forDeck.filter((c) => this.inDeck(c, d)).length;
+        const row = this.treeRow(body, d.split("::").pop() || d, n, "bt-deck-row bt-depth-" + Math.min(depth, 4) + (n ? "" : " is-empty"), this.deck === d, () => this.setDeck(d));
+        row.setAttr("data-deck", d);
+        row.setAttr("title", d);
+      }
+      if (noDeck) {
+        const n = forDeck.filter((c) => this.inDeck(c, "")).length;
+        const row = this.treeRow(body, "No deck", n, "bt-deck-row is-muted" + (n ? "" : " is-empty"), this.deck === "", () => this.setDeck(""));
+        row.setAttr("data-deck", "");
+        row.setAttr("title", "Cards that aren't synced with Anki");
+      }
+    }
+
+    // Concepts: the name opens the concept page, the filter icon filters the list.
+    const body = this.sideSection(side, "concepts", "Concepts", "share-2");
+    this.conceptsEl = body;
+    const forConcept = cards.filter((c) => this.matches(c, "concept"));
+    const counts = new Map<string, number>();
+    for (const c of forConcept) for (const k of this.store.conceptsOf(c)) counts.set(k.key, (counts.get(k.key) || 0) + 1);
     for (const e of list) {
       const k = e.concept;
-      const row = this.conceptRow(k.key, k.name, e.cards.length, k.exists ? "" : " is-ghost", active === k.key, () => this.openPage(k.key));
-      row.setAttr("title", k.name + (k.exists ? "" : " · no note yet"));
+      const n = counts.get(k.key) || 0;
+      const filtered = this.concept === k.key;
+      const row = this.conceptRow(k.key, k.name, n, (k.exists ? "" : " is-ghost") + (n || filtered ? "" : " is-empty"), filtered || this.pageKey === k.key, () => this.openPage(k.key));
+      row.setAttr("title", k.name + (k.exists ? "" : " · no note yet") + " · click to open its page");
+      const f = row.createSpan({ cls: "bt-tree-filter" + (filtered ? " is-on" : ""), attr: { "aria-label": filtered ? "Stop filtering by this concept" : "Filter the cards by this concept" } });
+      setIcon(f, "filter");
+      f.addEventListener("click", (ev) => { ev.stopPropagation(); this.setConcept(k.key); });
+      row.insertBefore(f, row.querySelector(".bt-tree-count")); // keep the counts aligned with the decks'
     }
-    if (none) this.conceptRow(NO_CONCEPT, "No concepts", none, " is-muted", active === NO_CONCEPT, () => this.setConcept(NO_CONCEPT));
+    const none = forConcept.filter((c) => !this.store.conceptsOf(c).length).length;
+    if (cards.some((c) => !this.store.conceptsOf(c).length)) {
+      this.conceptRow(NO_CONCEPT, "No concepts", none, " is-muted" + (none ? "" : " is-empty"), this.concept === NO_CONCEPT, () => this.setConcept(NO_CONCEPT));
+    }
     if (!list.length && cards.length) {
-      this.conceptsEl.createDiv({ cls: "bt-muted bt-concepts-hint", text: "Write [[links]] in a card's question or answer: each linked note becomes a concept." });
+      body.createDiv({ cls: "bt-muted bt-concepts-hint", text: "Write [[links]] in a card's question or answer: each linked note becomes a concept." });
     }
     this.renderCrumbs();
   }
 
+  /** A foldable section of the left panel; its open state is remembered. Returns the body. */
+  private sideSection(parent: HTMLElement, id: "decks" | "concepts", title: string, icon: string): HTMLElement {
+    const sec = parent.createDiv({ cls: "bt-side-sec" + (this.cfg.open[id] ? " is-open" : ""), attr: { "data-section": id } });
+    const head = sec.createDiv({ cls: "bt-col-title" });
+    setIcon(head.createSpan({ cls: "bt-col-icon" }), icon);
+    head.createSpan({ text: title });
+    setIcon(head.createSpan({ cls: "bt-col-chev" }), "chevron-right");
+    head.addEventListener("click", () => {
+      this.cfg.open[id] = !this.cfg.open[id];
+      sec.toggleClass("is-open", this.cfg.open[id]);
+      void this.plugin.saveSettings();
+    });
+    return sec.createDiv({ cls: "bt-tree" });
+  }
+
   private conceptRow(key: string, label: string, n: number, cls: string, active: boolean, onClick: () => void): HTMLElement {
-    const row = this.conceptsEl.createDiv({ cls: "bt-tree-row" + (active ? " is-active" : "") + cls, attr: { "data-key": key } });
+    const row = this.treeRow(this.conceptsEl, label, n, cls, active, onClick);
+    row.setAttr("data-key", key);
+    return row;
+  }
+
+  private treeRow(parent: HTMLElement, label: string, n: number, cls: string, active: boolean, onClick: () => void): HTMLElement {
+    const row = parent.createDiv({ cls: "bt-tree-row" + (active ? " is-active" : "") + (cls ? " " + cls.trim() : "") });
     row.createSpan({ cls: "bt-tree-label", text: label });
     row.createSpan({ cls: "bt-tree-count", text: String(n) });
     row.addEventListener("click", onClick);
     return row;
   }
 
+  /** Back to every card: no deck or concept filter, no concept page. */
   private showAll(): void {
     this.concept = "";
+    this.deck = null;
     if (this.pageKey) this.closePage();
     else {
       this.renderConcepts();
@@ -410,9 +504,17 @@ export class BankView extends ItemView {
     }
   }
 
-  /** Filter the bank by a concept (clicking the active one again clears it). */
+  /** Filter the bank by a concept (clicking the active one again clears it). Combines with the deck filter. */
   private setConcept(key: string): void {
     this.concept = this.concept === key && key !== "" ? "" : key;
+    if (this.pageKey) this.closePage(false);
+    this.renderConcepts();
+    this.renderList();
+  }
+
+  /** Filter the bank by a deck and its sub-decks (clicking the active one again clears it). Combines with the concept filter. */
+  private setDeck(deck: string | null): void {
+    this.deck = this.deck === deck ? null : deck;
     if (this.pageKey) this.closePage(false);
     this.renderConcepts();
     this.renderList();
@@ -425,19 +527,28 @@ export class BankView extends ItemView {
     const hits = this.sorted(all.filter((c) => this.matches(c)));
     this.hitKeys = hits.map(cardKey);
     this.countEl.empty();
-    this.countEl.createSpan({ text: hits.length + (hits.length === 1 ? " card" : " cards") });
-    if (this.concept === NO_CONCEPT) this.countEl.createSpan({ text: " without concepts" });
-    else if (this.concept) {
-      this.countEl.createSpan({ text: " mentioning " });
-      const name = this.countEl.createSpan({ cls: "bt-count-concept", text: this.conceptName(this.concept) });
-      name.setAttr("title", "Open the concept page");
-      const key = this.concept;
-      name.addEventListener("click", () => this.openPage(key));
-    }
+    this.countEl.createSpan({ cls: "bt-count-n", text: hits.length + (hits.length === 1 ? " card" : " cards") });
+    // The active filters, each with its own ×.
+    const chip = (icon: string, text: string, clear: () => void, open?: () => void) => {
+      const c = this.countEl.createSpan({ cls: "bt-filter-chip" });
+      setIcon(c.createSpan({ cls: "bt-filter-chip-icon" }), icon);
+      const t = c.createSpan({ cls: "bt-filter-chip-text", text });
+      if (open) {
+        t.addClass("is-link");
+        t.setAttr("title", "Open the concept page");
+        t.addEventListener("click", open);
+      }
+      const x = c.createSpan({ cls: "bt-filter-chip-x", attr: { "aria-label": "Remove this filter" } });
+      setIcon(x, "x");
+      x.addEventListener("click", clear);
+    };
+    if (this.deck !== null) chip("folder-tree", this.deckName(this.deck), () => this.setDeck(null));
     if (this.concept) {
-      const clr = this.countEl.createEl("a", { cls: "bt-clear", text: "Clear" });
-      clr.addEventListener("click", () => this.setConcept(""));
+      const key = this.concept;
+      chip("share-2", this.conceptName(key), () => this.setConcept(""), key === NO_CONCEPT ? undefined : () => this.openPage(key));
     }
+    if (this.source) chip("book-open", this.source, () => this.setFilter("source", ""));
+    if (this.note) chip("file-text", noteName(this.note), () => this.setFilter("note", ""));
     this.listEl.empty();
     if (!hits.length) {
       this.listEl.createDiv({ cls: "bt-empty", text: all.length ? "No cards match." : "No cards yet. List items tagged " + this.cfg.tag + " show up here." });
@@ -593,6 +704,7 @@ export class BankView extends ItemView {
   private editFromPage(c: Card): void {
     if (this.pageKey) {
       this.concept = this.pageKey;
+      if (this.deck !== null && !this.inDeck(c, this.deck)) this.deck = null; // keep the card in sight
       this.closePage();
     }
     this.selectCard(c);

@@ -83,20 +83,34 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: 210px minmax(0, 1fr);
+  /* Three separate panels on the theme's secondary background. */
+  gap: 8px;
+  padding: 8px;
+  background: var(--background-secondary);
 }
-.bt-body.has-editor { grid-template-columns: 200px minmax(0, 1fr) minmax(320px, 400px); }
-.bt-tree-col, .bt-list-col, .bt-editor, .bt-page { min-height: 0; overflow-y: auto; }
+.bt-body.has-editor { grid-template-columns: 210px minmax(0, 1fr) minmax(320px, 400px); }
+.bt-tree-col, .bt-list-col, .bt-editor, .bt-page {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--bt-line);
+  border-radius: var(--radius-l, 10px);
+}
 .bt-editor, .bt-page { display: none; }
 .bt-body.has-editor .bt-editor { display: block; }
 /* A concept page replaces the list and the editor. */
 .bt-body.has-page,
-.bt-body.has-page.has-editor { grid-template-columns: 200px minmax(0, 1fr); }
+.bt-body.has-page.has-editor { grid-template-columns: 210px minmax(0, 1fr); }
 .bt-body.has-page .bt-list-col,
 .bt-body.has-page .bt-editor { display: none; }
 .bt-body.has-page .bt-page { display: block; }
 
-/* Narrow: one panel at a time. The editor (with a back button) replaces the list. */
+/* Narrow: one panel at a time, without the gaps. The editor (with a back button) replaces the list. */
+.bt-body.bt-narrow { gap: 0; padding: 0; background: var(--background-primary); }
+.bt-body.bt-narrow > .bt-tree-col, .bt-body.bt-narrow > .bt-list-col,
+.bt-body.bt-narrow > .bt-editor, .bt-body.bt-narrow > .bt-page { border-radius: 0; border-width: 0; }
+.bt-body.bt-narrow > .bt-tree-col { border-right-width: 1px; }
 .bt-body.bt-narrow,
 .bt-body.bt-narrow.has-editor,
 .bt-body.bt-narrow.has-page { grid-template-columns: 150px minmax(0, 1fr); }
@@ -109,22 +123,48 @@
 /* Tiny: the concepts become a strip above the list. */
 .bt-body.bt-tiny,
 .bt-body.bt-tiny.has-page { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.bt-body.bt-tiny .bt-tree-col { border-right: none; border-bottom: 1px solid var(--bt-line); padding: 6px 8px; overflow: visible; }
+.bt-body.bt-tiny > .bt-tree-col { border-right-width: 0; border-bottom-width: 1px; padding: 6px 8px; overflow: visible; }
 .bt-body.bt-tiny .bt-col-title { display: none; }
-.bt-body.bt-tiny .bt-tree { display: flex; gap: 4px; overflow-x: auto; }
+.bt-body.bt-tiny .bt-tree,
+.bt-body.bt-tiny .bt-side-sec .bt-tree { display: flex; gap: 4px; overflow-x: auto; }
+.bt-body.bt-tiny .bt-deck-row { padding-left: 10px; }
 .bt-body.bt-tiny .bt-tree-row { flex: none; margin: 0; }
 .bt-body.bt-tiny .bt-concepts-hint { display: none; }
 
-/* ── Concepts column ───────────────────────────────────────────────────────── */
-.bt-tree-col { background: var(--background-secondary); border-right: 1px solid var(--bt-line); padding: 14px 8px; }
+/* ── Decks and concepts panel ──────────────────────────────────────────────── */
+.bt-tree-col { padding: 8px 6px 12px; }
 .bt-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
-  padding: 0 10px 8px;
+  padding: 12px 10px 6px;
+  cursor: pointer;
+  user-select: none;
 }
+.bt-col-title:hover { color: var(--text-muted); }
+.bt-col-icon, .bt-col-chev { display: inline-flex; }
+.bt-root .bt-col-icon svg { width: 14px; height: 14px; }
+.bt-col-chev { margin-left: auto; transition: transform 0.12s ease; }
+.bt-root .bt-col-chev svg { width: 13px; height: 13px; }
+.bt-side-sec.is-open .bt-col-chev { transform: rotate(90deg); }
+.bt-side-sec:not(.is-open) .bt-tree { display: none; }
+.bt-tree-all { padding-top: 2px; }
+.bt-deck-row.bt-depth-1 { padding-left: 24px; }
+.bt-deck-row.bt-depth-2 { padding-left: 38px; }
+.bt-deck-row.bt-depth-3 { padding-left: 52px; }
+.bt-deck-row.bt-depth-4 { padding-left: 66px; }
+.bt-tree-row.is-empty:not(.is-active) { opacity: 0.45; }
+.bt-tree-filter { display: inline-flex; color: var(--text-faint); opacity: 0; }
+.bt-root .bt-tree-filter svg { width: 13px; height: 13px; }
+.bt-tree-row:hover .bt-tree-filter { opacity: 1; }
+.bt-tree-filter:hover { color: var(--text-accent); }
+.bt-tree-filter.is-on { opacity: 1; color: var(--text-accent); }
+@media (hover: none) { .bt-tree-filter { opacity: 0.7; } }
 .bt-tree-row {
   display: flex;
   align-items: center;
@@ -155,9 +195,24 @@
   padding: 8px 14px;
   border-bottom: 1px solid var(--bt-line);
 }
-.bt-count { font-size: var(--font-ui-smaller); color: var(--text-muted); min-width: 0; }
-.bt-count-concept { color: var(--text-accent); cursor: pointer; }
-.bt-clear { margin-left: 8px; cursor: pointer; }
+.bt-count { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--font-ui-smaller); color: var(--text-muted); min-width: 0; }
+.bt-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 999px;
+  background: var(--bt-tint);
+  color: var(--text-accent);
+}
+.bt-filter-chip-icon, .bt-filter-chip-x { display: inline-flex; flex: none; }
+.bt-root .bt-filter-chip svg { width: 12px; height: 12px; }
+.bt-filter-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-filter-chip-text.is-link { cursor: pointer; }
+.bt-filter-chip-text.is-link:hover { text-decoration: underline; }
+.bt-filter-chip-x { cursor: pointer; opacity: 0.7; border-radius: 999px; }
+.bt-filter-chip-x:hover { opacity: 1; background: var(--bt-tint-strong); }
 .bt-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--bt-line); border-radius: var(--radius-m); flex: none; }
 .bt-root .bt-seg button {
   height: auto;
@@ -191,7 +246,7 @@
 .bt-card-status.is-leaving { color: var(--color-red); }
 
 /* ── Editor ────────────────────────────────────────────────────────────────── */
-.bt-editor { border-left: 1px solid var(--bt-line); padding: 14px 16px 18px; }
+.bt-editor { padding: 14px 16px 18px; }
 .bt-ed-nav { justify-content: space-between; align-items: center; margin: -4px 0 10px; }
 .bt-root .bt-ed-back { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px 2px 2px; height: auto; background: transparent; box-shadow: none; color: var(--text-accent); }
 .bt-ed-head { display: flex; align-items: baseline; gap: 8px; }

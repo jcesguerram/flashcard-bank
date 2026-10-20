@@ -2,6 +2,20 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.3.0 — 2026-10-20
+
+### New
+
+- **Decks in the left panel.** Above the concepts, a **Decks** section lists every Anki deck your cards use, with sub-decks indented under their parent. Click a deck to show its cards (sub-decks included); *No deck* shows the cards that aren't synced with Anki.
+- **Deck and concept filters combine.** For example, the *Regulatory capital* cards in *Finance::Banking*. A concept's name still opens its page; the filter icon next to it filters the list instead.
+- **Filter chips.** The active filters (deck, concept, source, note) show above the list, each with its own × to remove it.
+- **Counts that follow the filters.** The numbers next to each deck and concept count the cards the other filters (and the search) leave; the ones with none are dimmed.
+
+### Changed
+
+- The **Decks** and **Concepts** sections have icons and can be folded; the plugin remembers which are open.
+- The three panels (decks and concepts, list, editor) are separated by a small gap, with rounded corners. In a narrow pane they join again.
+
 ## 1.2.1 — 2026-10-19
 
 ### Fixed

@@ -110,16 +110,17 @@ Since they're ordinary links, concepts also work outside the plugin: a concept n
 
 | Area | What it does |
 |------|--------------|
-| **Header** | Where you are (*All cards*, a concept you're filtering by, or a concept page), plus two buttons: the **concept map** and **Sync with Anki**. |
+| **Header** | Where you are (*All cards*, the deck and concept you're filtering by, or a concept page), plus two buttons: the **concept map** and **Sync with Anki**. |
 | **Search bar** | Searches questions, answers and every field. **Filter** opens a source filter (each linked file, plus any plain-text source) and a note filter; the button shows how many are on. **New card** opens an empty card. |
-| **Concepts** (left) | Every concept, with how many cards mention it, most-used first. Click one to open its [concept page](#concept-pages). *All cards* shows the whole bank; *No concepts* lists the cards that don't link to any. |
+| **Decks and concepts** (left) | *All cards* at the top shows the whole bank and clears the deck and concept filters. Below it, two sections you can fold (the plugin remembers which are open). **Decks** lists every Anki deck your cards use, with sub-decks indented under their parent (`Finance::Banking` under *Finance*); click one to show its cards, sub-decks included. *No deck* lists the cards that aren't synced with Anki. The section only appears when some card has a deck. **Concepts** lists every concept, most-used first: click a name to open its [concept page](#concept-pages), or the filter icon next to it to filter the list instead. *No concepts* lists the cards that don't link to any. |
+| **Filters** | A deck and a concept filter combine (for example, the *Regulatory capital* cards in *Finance::Banking*), and they also combine with the search and the source and note filters. The active ones show as chips above the list, each with its own ×; a concept chip's name opens the concept's page. The numbers next to each deck and concept count the cards that the other filters leave, and the ones with none are dimmed. |
 | **List** (middle) | The matching cards, as plain text. **Compact** shows one line of question and one of answer; **Expanded** shows them in full, with the source, deck, note, the number of related cards, and **no id** when the card has no block id. Both show the card's Anki status (*Anki: new*, *Anki: changed*, *Synced with Anki*, *Anki: will be deleted*). The choice is remembered. |
 | **Map** | The concept map of the open card, under the list. The card is on the left, its concepts in the middle, and the other cards that mention each concept on the right. A card sharing several concepts is drawn once with a line from each, so the cards that bridge concepts stand out. Related cards get ↔, or a dashed line when they share no concept. Clicking a card centers the map on it; clicking a concept opens its page. The map shrinks to fit the column; **Expand** in its header hides the list so the map gets the whole middle column, and **Back to list** restores it. |
 | **Editor** (right) | Opens when you click a card. |
 
-In a narrow pane (or on a phone) the bank shows one panel at a time: opening a card replaces the list with the editor, and **Cards** at its top brings you back to the list where you left it, with the same search, filters and scroll position. In a very narrow pane the concepts become a strip above the list.
+In a narrow pane (or on a phone) the bank shows one panel at a time: opening a card replaces the list with the editor, and **Cards** at its top brings you back to the list where you left it, with the same search, filters and scroll position. In a very narrow pane the decks and concepts become strips above the list.
 
-The bank uses your theme's colors and accent color, in light and dark mode.
+The bank's three panels (decks and concepts, list, editor) sit side by side with a small gap between them, which goes away in a narrow pane. They use your theme's colors and accent color, in light and dark mode.
 
 ## Concept pages
 
