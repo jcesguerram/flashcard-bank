@@ -2,6 +2,12 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.3.1 — 2026-10-20
+
+### Fixed
+
+- **A dash inside a link no longer splits the card.** A card like `What is [[Basel III|Basel III – overview]]? – A capital standard` was split at the dash inside the link, cutting the link in two: the question became `What is [[Basel III|Basel III` and the rest went to the answer (and to the back of the Anki card). Dashes inside `[[links]]` and embeds are now ignored when looking for the question/answer split. Cards that already split correctly are read exactly as before.
+
 ## 1.3.0 — 2026-10-20
 
 ### New

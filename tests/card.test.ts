@@ -4,7 +4,7 @@
 
 import {
   parseCards, rewriteCard, replaceCard, appendCard, newCardLine, idsInText, newId,
-  parseLinks, fieldValue, plainValue, hasTag, textLinks, headingsOf, insertCard,
+  parseLinks, fieldValue, plainValue, hasTag, textLinks, headingsOf, insertCard, splitQA,
 } from "../src/card";
 
 declare const require: any;
@@ -140,6 +140,26 @@ for (const c of cards) eq(rewriteCard(c, same(c)), c.raw, "unchanged rewrite is 
   const taken = new Set(["000000"]);
   eq(newId(taken, fake), "iiiiii", "newId skips an id already used");
   for (let i = 0; i < 200; i++) ok(/^[a-z0-9]{6}$/.test(newId(new Set())), "id format");
+}
+
+// ── Question/answer split ignores dashes inside links ──────────────────────
+{
+  const qa = (l: string) => { const r = splitQA(l); return [r.q, r.a, r.sep]; };
+  eq(qa("What is [[Basel III|Basel III – overview]]? – A capital standard"), ["What is [[Basel III|Basel III – overview]]?", "A capital standard", "–"], "spaced dash inside an alias is not the split");
+  eq(qa("What is [[Basel III – overview]]? – A capital standard"), ["What is [[Basel III – overview]]?", "A capital standard", "–"], "spaced dash inside a link target is not the split");
+  eq(qa("What is [[Basel III|Basel III - overview]]? - A capital standard"), ["What is [[Basel III|Basel III - overview]]?", "A capital standard", "-"], "hyphen inside an alias is not the split");
+  eq(qa("What are the components? – [[Common Equity Tier 1]], AT1 and Tier 2"), ["What are the components?", "[[Common Equity Tier 1]], AT1 and Tier 2", "–"], "answer starting with a link keeps it");
+  eq(qa("What does [[CET1]] – Core equity"), ["What does [[CET1]]", "Core equity", "–"], "question ending with a link keeps it");
+  eq(qa("[[CET1]] – [[Common Equity Tier 1]]"), ["[[CET1]]", "[[Common Equity Tier 1]]", "–"], "links on both sides");
+  eq(qa("See ![[img – 1.png]] here – An image"), ["See ![[img – 1.png]] here", "An image", "–"], "embeds are masked too");
+  eq(qa("Ratio [[A|x – y]] and [[B|z – w]] – Answer – with dash"), ["Ratio [[A|x – y]] and [[B|z – w]]", "Answer – with dash", "–"], "several links; later dashes stay in the answer");
+  eq(qa("Plain – question – answer"), ["Plain", "question – answer", "–"], "outside links nothing changes: first spaced dash");
+  eq(qa("No separator [[A – B]]"), ["No separator [[A – B]]", "", "–"], "only a dash inside a link: no answer");
+  const c = parseCards("- What is [[Basel III|Basel III – overview]]? – A capital standard #flashcard ^bas001", "N.md")[0]!;
+  eq([c.q, c.a], ["What is [[Basel III|Basel III – overview]]?", "A capital standard"], "parseCards uses the link-aware split");
+  eq(rewriteCard(c, same(c)), c.raw, "such a card rewrites unchanged");
+  const ed = rewriteCard(c, { ...same(c), a: "The Basel Committee's capital standard" });
+  eq(ed, "- What is [[Basel III|Basel III – overview]]? – The Basel Committee's capital standard #flashcard ^bas001", "editing its answer keeps the question intact");
 }
 
 // ── Sections: where new cards go ───────────────────────────────────────────

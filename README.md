@@ -82,7 +82,7 @@ Any list item that carries the card tag (`#flashcard` by default):
 - What does [[Tier 2 capital]] measure? – Losses once the bank is no longer a going concern [Source:: [[Book.pdf]]] [Related:: ] [Deck:: Finance] #flashcard ^e57187
 ```
 
-- **Question and answer** are split on the first ` – `, ` — ` or ` - `.
+- **Question and answer** are split on the first ` – ` or ` — ` (or, if there's none, the first ` - `), with a space on each side. Dashes inside a `[[link]]` don't count, so an alias like `[[Basel III|Basel III – overview]]` is safe. A spaced dash in the plain text of the question would be taken as the split: use a colon or parentheses there instead.
 - **Fields** are inline fields (`[Name:: value]`). The three the plugin uses (source, related, deck) have configurable names (see *Field names*). Any other inline field on the line is left untouched.
 - **Block id**: the `^id` at the end of the card. A card whose id sits alone on the next line (no blank line in between) is read correctly too.
 - **A list marker or checkbox** before the question (`- `, `- [ ] `, `- [?] `…) is kept as is.

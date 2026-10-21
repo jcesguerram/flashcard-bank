@@ -161,9 +161,21 @@ export function readCard(raw: string, path: string, line: number, endLine: numbe
   return { path, line, endLine, raw, prefix, body, leadEnd, q, a, sep, fields, tags, id, idStart };
 }
 
+/**
+ * Links and embeds blanked out with a placeholder of the same length, so a dash
+ * inside one (an alias like [[Basel III|Basel III – overview]]) is never taken
+ * for the question/answer split. The placeholder isn't whitespace, so a link
+ * right next to the dash isn't swallowed by the separator either.
+ */
+function maskLinks(s: string): string {
+  return s.replace(/!?\[\[[^\]]*\]\]/g, (m) => "x".repeat(m.length));
+}
+
+/** Split "question – answer" at the first spaced dash outside links (en or em dash first, then a hyphen). */
 export function splitQA(lead: string): { q: string; a: string; sep: string } {
   const t = lead.replace(/\s+/g, " ").trim();
-  const m = t.match(SEP_RE) || t.match(SEP_HYPHEN_RE);
+  const masked = maskLinks(t);
+  const m = masked.match(SEP_RE) || masked.match(SEP_HYPHEN_RE);
   if (!m || m.index === undefined) return { q: t, a: "", sep: "–" };
   return { q: t.slice(0, m.index).trim(), a: t.slice(m.index + m[0].length).trim(), sep: m[1] ?? "–" };
 }
