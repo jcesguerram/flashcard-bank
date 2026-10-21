@@ -56,6 +56,7 @@ export function drawConceptMap(
   focus: Card | null | undefined,
   onCard: (c: Card) => void,
   onConcept: (k: Concept) => void,
+  onFocus: () => void,
   addTools?: (tools: HTMLElement) => void
 ): void {
   const head = el.createDiv({ cls: "bt-map-head" });
@@ -166,7 +167,8 @@ export function drawConceptMap(
 
   // Open card
   const fg = svg(s, "g", { class: "bt-node is-active" });
-  svg(fg, "title", {}).textContent = plain(focus.q);
+  svg(fg, "title", {}).textContent = plain(focus.q) + " · click to go back to this card in the list";
+  fg.addEventListener("click", onFocus);
   svg(fg, "rect", { x: 0, y: focusBox.y, width: FW, height: fh, rx: 6 });
   text(fg, fLines, 10, focusBox.y + 4);
 

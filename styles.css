@@ -240,7 +240,12 @@
 .bt-card-a { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: 2px; }
 .bt-list:not(.is-expanded) .bt-card-q,
 .bt-list:not(.is-expanded) .bt-card-a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bt-card-meta { font-size: var(--font-ui-smaller); color: var(--text-faint); margin-top: 4px; }
+.bt-card-meta, .bt-pc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: var(--font-ui-smaller); color: var(--text-faint); margin-top: 4px; }
+.bt-meta-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.bt-meta-icon { display: inline-flex; flex: none; }
+.bt-root .bt-meta-icon svg { width: 12px; height: 12px; }
+.bt-meta-link { color: var(--text-muted); cursor: pointer; border-bottom: 1px dotted currentColor; }
+.bt-meta-link:hover { color: var(--text-accent); }
 .bt-card-status { font-size: var(--font-ui-smaller); color: var(--text-accent); margin-top: 3px; }
 .bt-card-status.is-synced { color: var(--text-muted); }
 .bt-card-status.is-leaving { color: var(--color-red); }
@@ -386,7 +391,7 @@ textarea.bt-input { resize: vertical; font-family: inherit; }
 .bt-pc-body { display: none; padding: 0 0 12px; }
 .bt-pc.is-open .bt-pc-body { display: block; }
 .bt-pc-a { color: var(--text-muted); }
-.bt-pc-meta { font-size: var(--font-ui-smaller); color: var(--text-faint); margin-top: 6px; }
+
 .bt-pc-edit { color: var(--text-accent); cursor: pointer; }
 .bt-pc-edit:hover { text-decoration: underline; }
 .bt-near { background: var(--background-secondary); border-radius: var(--radius-m); padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }

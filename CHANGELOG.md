@@ -2,6 +2,17 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.3.2 — 2026-10-20
+
+### Fixed
+
+- **A card's source and note are told apart.** On concept pages and in the Expanded list, a card's details showed as plain names in a row, so a card citing `[[Kaput]]` and written in the note *Kaput* read "Kaput · Kaput". Each detail now has its icon (source, deck, note). A source that's a `[[link]]` opens its note when clicked, and the note's name opens the note at the card.
+- **Filtering with the map expanded shows the result.** The expanded concept map hides the list, so choosing a deck or concept, searching, or clicking a source or **Show in bank** on a concept page seemed to do nothing. These now bring the list back.
+
+### Changed
+
+- In the concept map, clicking the open card (on the left) takes you back to it in the list.
+
 ## 1.3.1 — 2026-10-20
 
 ### Fixed
