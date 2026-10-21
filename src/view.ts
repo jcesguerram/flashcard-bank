@@ -32,6 +32,7 @@ export class BankView extends ItemView {
   private query = "";
   private concept = ""; // concept key, NO_CONCEPT, or "" for all
   private deck: string | null = null; // a deck (with its sub-decks), "" for cards without a deck, or null for all
+  private unanswered = false; // only cards without an answer
   private source = "";
   private note = "";
   private filtersOpen = false;
@@ -189,6 +190,9 @@ export class BankView extends ItemView {
     ro.observe(this.bodyEl);
     this.register(() => ro.disconnect());
 
+    // "Notes that mention it" on a concept page reads Obsidian's links, which change outside the cards too.
+    this.registerEvent(this.app.metadataCache.on("resolved", () => { if (this.pageKey) this.renderPage(); }));
+
     this.unsubscribe = this.store.onChange(() => {
       try {
         this.onStoreChange();
@@ -304,7 +308,7 @@ export class BankView extends ItemView {
     const home = el.createSpan({ cls: "bt-crumbs-home", text: "Flashcard bank" });
     const here = this.pageKey
       ? this.conceptName(this.pageKey)
-      : [this.deck === null ? "" : this.deckName(this.deck), this.concept ? this.conceptName(this.concept) : ""].filter(Boolean).join(" · ") || "All cards";
+      : [this.unanswered ? "Unanswered" : "", this.deck === null ? "" : this.deckName(this.deck), this.concept ? this.conceptName(this.concept) : ""].filter(Boolean).join(" · ") || "All cards";
     if (this.pageKey) {
       home.addClass("is-link");
       home.addEventListener("click", () => this.closePage());
@@ -350,7 +354,8 @@ export class BankView extends ItemView {
   }
 
   /** Does the card pass the filters? `skip` leaves out one of them (to count cards for its own list). */
-  private matches(c: Card, skip?: "deck" | "concept"): boolean {
+  private matches(c: Card, skip?: "deck" | "concept" | "unanswered"): boolean {
+    if (this.unanswered && skip !== "unanswered" && c.a.trim()) return false;
     if (this.concept && skip !== "concept" && !this.inConcept(c, this.concept)) return false;
     if (this.deck !== null && skip !== "deck" && !this.inDeck(c, this.deck)) return false;
     if (this.source && !this.store.sourcesOf(c).includes(this.source)) return false;
@@ -417,7 +422,14 @@ export class BankView extends ItemView {
     side.empty();
     const all = side.createDiv({ cls: "bt-tree bt-tree-all" });
     this.conceptsEl = all;
-    this.conceptRow("", "All cards", cards.length, "", !this.pageKey && !this.concept && this.deck === null, () => this.showAll());
+    this.conceptRow("", "All cards", cards.length, "", !this.pageKey && !this.concept && this.deck === null && !this.unanswered, () => this.showAll());
+    if (cards.some((c) => !c.a.trim())) {
+      const n = cards.filter((c) => !c.a.trim() && this.matches(c, "unanswered")).length;
+      const row = this.treeRow(all, "Unanswered", n, "bt-unanswered-row" + (n ? "" : " is-empty"), this.unanswered, () => this.setUnanswered(!this.unanswered));
+      setIcon(row.createSpan({ cls: "bt-tree-icon" }), "help-circle");
+      row.prepend(row.lastChild!);
+      row.setAttr("title", "Cards without an answer yet");
+    }
 
     // Decks (only when some card has one).
     if (decks.size) {
@@ -499,6 +511,7 @@ export class BankView extends ItemView {
   private showAll(): void {
     this.concept = "";
     this.deck = null;
+    this.unanswered = false;
     this.showList();
     if (this.pageKey) this.closePage();
     else {
@@ -510,6 +523,15 @@ export class BankView extends ItemView {
   /** Filter the bank by a concept (clicking the active one again clears it). Combines with the deck filter. */
   private setConcept(key: string): void {
     this.concept = this.concept === key && key !== "" ? "" : key;
+    this.showList();
+    if (this.pageKey) this.closePage(false);
+    this.renderConcepts();
+    this.renderList();
+  }
+
+  /** Show only the cards without an answer (combines with every other filter). */
+  private setUnanswered(on: boolean): void {
+    this.unanswered = on;
     this.showList();
     if (this.pageKey) this.closePage(false);
     this.renderConcepts();
@@ -547,6 +569,7 @@ export class BankView extends ItemView {
       setIcon(x, "x");
       x.addEventListener("click", clear);
     };
+    if (this.unanswered) chip("help-circle", "Unanswered", () => this.setUnanswered(false));
     if (this.deck !== null) chip("folder-tree", this.deckName(this.deck), () => this.setDeck(null));
     if (this.concept) {
       const key = this.concept;
@@ -568,7 +591,12 @@ export class BankView extends ItemView {
     const key = cardKey(c);
     const row = parent.createDiv({ cls: "bt-card" + (key === this.selKey ? " is-active" : "") });
     row.createDiv({ cls: "bt-card-q", text: readable(c.q) || "(no question)" });
-    if (c.a) row.createDiv({ cls: "bt-card-a", text: readable(c.a) });
+    if (c.a.trim()) row.createDiv({ cls: "bt-card-a", text: readable(c.a) });
+    else {
+      const na = row.createDiv({ cls: "bt-card-na" });
+      setIcon(na.createSpan(), "help-circle");
+      na.createSpan({ text: "No answer yet" });
+    }
     if (this.cfg.density === "expanded") {
       this.metaItems(row.createDiv({ cls: "bt-card-meta" }), c, true);
     }
@@ -586,7 +614,7 @@ export class BankView extends ItemView {
     const item = (icon: string, title: string) => {
       const i = el.createSpan({ cls: "bt-meta-item", attr: { "aria-label": title } });
       setIcon(i.createSpan({ cls: "bt-meta-icon" }), icon);
-      return i;
+      return i.createSpan({ cls: "bt-meta-val" }); // the text runs inline inside, so "[[A]], b" reads naturally
     };
     const link = (parent: HTMLElement, text: string, title: string, go: () => void) => {
       const a = parent.createSpan({ cls: "bt-meta-link", text });
@@ -745,13 +773,15 @@ export class BankView extends ItemView {
   }
 
   /** Leave the page and open a card in the editor, with the list showing the page's concept. */
-  private editFromPage(c: Card): void {
+  private editFromPage(c: Card, toAnswer = false): void {
     if (this.pageKey) {
       this.concept = this.pageKey;
       if (this.deck !== null && !this.inDeck(c, this.deck)) this.deck = null; // keep the card in sight
+      if (this.unanswered && c.a.trim()) this.unanswered = false;
       this.closePage();
     }
     this.selectCard(c);
+    if (toAnswer) this.editorEl.querySelector<HTMLElement>(".bt-a")?.focus();
   }
 
   private conceptCards(key: string): Card[] {
@@ -798,9 +828,10 @@ export class BankView extends ItemView {
     titles.createDiv({ cls: "bt-page-kicker", text: "Concept overview" });
     const h = titles.createDiv({ cls: "bt-page-title", text: k.name });
     if (!k.exists) h.createSpan({ cls: "bt-page-ghost", text: "no note yet" });
+    const mentions = this.notesMentioning(k);
     titles.createDiv({
       cls: "bt-page-stats",
-      text: [plural(cards.length, "card"), plural(sources.size, "source"), plural(near.length, "connected concept")].join(" · "),
+      text: [plural(cards.length, "card"), plural(sources.size, "source"), plural(near.length, "connected concept"), mentions.length ? plural(mentions.length, "note") : ""].filter(Boolean).join(" · "),
     });
     const acts = head.createDiv({ cls: "bt-page-actions" });
     const show = acts.createEl("button");
@@ -856,6 +887,15 @@ export class BankView extends ItemView {
           this.renderList();
         });
       }
+      side.createDiv({ cls: "bt-page-h bt-page-h-gap", text: "Notes that mention it" });
+      if (!mentions.length) side.createDiv({ cls: "bt-muted", text: "No other note links to it outside a card." });
+      for (const f of mentions) {
+        const row = side.createDiv({ cls: "bt-page-note" });
+        setIcon(row.createSpan(), "file-text");
+        row.createSpan({ text: f.basename });
+        row.setAttr("title", f.path);
+        row.addEventListener("click", () => { void this.app.workspace.getLeaf("tab").openFile(f); });
+      }
     } else {
       const box = el.createDiv({ cls: "bt-conns" });
       box.createDiv({ cls: "bt-muted bt-conns-hint", text: "Cards that link " + k.name + " to another concept. Open a card to read its answer, or click a concept to go to its page." });
@@ -874,6 +914,40 @@ export class BankView extends ItemView {
     el.scrollTop = keep;
   }
 
+  /**
+   * The notes that link to a concept outside their cards, alphabetically. Links
+   * are matched like concepts (display names and headings lead to the same note;
+   * a concept without a note is matched by name). The concept's own note and
+   * excluded folders are left out.
+   */
+  private notesMentioning(k: Concept): TFile[] {
+    const mc = this.app.metadataCache;
+    const sources = new Set<string>();
+    if (k.exists) {
+      for (const [src, dests] of Object.entries(mc.resolvedLinks)) if (dests[k.key]) sources.add(src);
+    } else {
+      for (const [src, dests] of Object.entries(mc.unresolvedLinks)) {
+        if (Object.keys(dests).some((d) => this.store.conceptOf({ raw: d, linkpath: d.split("#")[0] ?? d, blockId: null, alias: "" }, src).key === k.key)) sources.add(src);
+      }
+    }
+    const out: TFile[] = [];
+    for (const path of sources) {
+      if (path === k.key || this.store.excluded(path)) continue;
+      const f = this.app.vault.getAbstractFileByPath(path);
+      if (!(f instanceof TFile)) continue;
+      const cards = this.store.byPath.get(path) || [];
+      const inCard = (line: number) => cards.some((c) => line >= c.line && line <= c.endLine);
+      const links = mc.getFileCache(f)?.links || [];
+      const outside = links.some((l) => {
+        if (inCard(l.position.start.line) || l.link.includes("#^")) return false; // inside a card, or a link to a card
+        const linkpath = l.link.split("#")[0] ?? "";
+        return !!linkpath.trim() && this.store.conceptOf({ raw: l.original, linkpath, blockId: null, alias: "" }, path).key === k.key;
+      });
+      if (outside) out.push(f);
+    }
+    return out.sort((a, b) => a.basename.localeCompare(b.basename));
+  }
+
   /** A card on the concept page: the question, with the answer and its details shown on click. */
   private pageCard(parent: HTMLElement, c: Card, mark: string, where: string): void {
     const key = where + "\n" + cardKey(c); // the same card can show in several places, each opens on its own
@@ -883,7 +957,14 @@ export class BankView extends ItemView {
     head.createSpan({ cls: "bt-pc-q", text: readable(c.q) || "(no question)" });
     const tog = head.createSpan({ cls: "bt-pc-toggle" });
     const body = item.createDiv({ cls: "bt-pc-body" });
-    this.richText(body.createDiv({ cls: "bt-pc-a" }), c.a || "(no answer)", c.path);
+    if (c.a.trim()) this.richText(body.createDiv({ cls: "bt-pc-a" }), c.a, c.path);
+    else {
+      const na = body.createDiv({ cls: "bt-pc-na" });
+      setIcon(na.createSpan(), "help-circle");
+      na.createSpan({ text: "No answer yet · " });
+      const go = na.createSpan({ cls: "bt-pc-answer", text: "Answer it" });
+      go.addEventListener("click", (e) => { e.stopPropagation(); this.editFromPage(c, true); });
+    }
     const meta = body.createDiv({ cls: "bt-pc-meta" });
     this.metaItems(meta, c, false);
     const edit = meta.createSpan({ cls: "bt-pc-edit", text: "Edit card" });

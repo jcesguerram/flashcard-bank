@@ -174,6 +174,13 @@ class SyncModal extends Modal {
       note: noteOf(u.card.key),
     })));
     this.section(el, "Will be re-created (their Anki note no longer exists)", p.recreate.map((c) => ({ text: c.q, note: noteOf(c.key) })));
+    // Cards going to Anki without an answer: they're synced, but their back will be empty.
+    const blank = p.create.concat(p.recreate, p.update.filter((u) => u.fields).map((u) => u.card))
+      .filter((c) => !c.back.trim())
+      .map((c) => ({ text: c.q, note: noteOf(c.key) }))
+      .concat(this.noId.filter((c) => !c.a.trim()).map((c) => ({ text: plainValue(c.q), note: noteOf(c.path) })));
+    const warn = this.section(el, "No answer yet: their back in Anki will be empty", blank, "is-warning", true);
+    warn?.addClass("bt-sync-warn");
     if (p.remove.length) {
       const items = p.remove.map((r) => ({
         text: r.q + (r.reason === "no-deck" ? " — its Deck was cleared" : " — no longer in Obsidian"),

@@ -2,7 +2,14 @@
 
 All notable changes to Flashcard Bank are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## 1.3.2 — 2026-10-20
+## 1.4.0 — 2026-10-21
+
+### New
+
+- **Notes that mention a concept.** A concept page now lists, under its sources, the other notes that link to the concept outside their cards, and the line under the title counts them. Click one to open it. Links are matched like concepts (display names and headings lead to the same note), and the concept's own note and excluded folders are left out.
+- **Unanswered cards stand out.** A card without an answer shows *No answer yet* in the list, and on concept pages with an **Answer it** link that opens it in the editor, ready to type the answer.
+- **Unanswered filter.** In the left panel, right under *All cards*, with how many cards are left to answer. It combines with the deck, concept and other filters.
+- **Anki warning for cards without an answer.** They're still synced (with an empty back), but the sync summary lists them under **No answer yet**, so you can answer them before syncing if you prefer.
 
 ### Fixed
 

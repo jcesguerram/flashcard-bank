@@ -238,6 +238,16 @@
 .bt-card.is-active { background: var(--bt-tint); border-left-color: var(--interactive-accent); }
 .bt-card-q { font-weight: var(--font-semibold); }
 .bt-card-a { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: 2px; }
+.bt-card-na, .bt-pc-na { display: flex; align-items: center; gap: 5px; font-style: italic; color: var(--text-faint); font-size: var(--font-ui-small); margin-top: 2px; }
+.bt-card-na svg, .bt-pc-na svg { width: 13px; height: 13px; }
+.bt-pc-answer { font-style: normal; color: var(--text-accent); cursor: pointer; }
+.bt-pc-answer:hover { text-decoration: underline; }
+.bt-tree-row .bt-tree-icon { display: inline-flex; color: var(--text-faint); }
+.bt-tree-row.is-active .bt-tree-icon { color: var(--text-accent); }
+.bt-root .bt-tree-icon svg { width: 14px; height: 14px; }
+.bt-page-note { display: flex; align-items: center; gap: 6px; font-size: var(--font-ui-smaller); padding: 3px 0; cursor: pointer; }
+.bt-page-note:hover { color: var(--text-accent); }
+.bt-page-note svg { width: 13px; height: 13px; flex: none; color: var(--text-faint); }
 .bt-list:not(.is-expanded) .bt-card-q,
 .bt-list:not(.is-expanded) .bt-card-a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bt-card-meta, .bt-pc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: var(--font-ui-smaller); color: var(--text-faint); margin-top: 4px; }
@@ -447,6 +457,8 @@ textarea.bt-input { resize: vertical; font-family: inherit; }
 .bt-sync-section ul { margin: 0; padding-left: 20px; font-size: var(--font-ui-small); color: var(--text-muted); }
 .bt-sync-danger { border-left: 3px solid var(--color-red); padding-left: 10px; }
 .bt-sync-danger .bt-sync-title { color: var(--color-red); }
+.bt-sync-warn { border-left: 3px solid var(--color-orange); padding-left: 10px; }
+.bt-sync-warn .bt-sync-title { color: var(--color-orange); }
 .bt-sync-section.is-muted { opacity: 0.75; }
 .bt-sync-more { font-style: italic; }
 .bt-sync-section.is-full ul { max-height: 220px; overflow-y: auto; }
